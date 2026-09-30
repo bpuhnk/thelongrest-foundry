@@ -48,15 +48,25 @@ function fakeWorld() {
       return e;
     },
   };
-  const game = { version: "14.368", system: { id: "dnd5e", version: "6.0.5" }, folders, actors, journal, user: { id: "gm", isGM: true }, users: { activeGM: { id: "gm" } } };
-  return { game, Folder, Actor, JournalEntry, folders, actors, journal };
+  Actor.deleteDocuments = async (ids) => { for (const i of ids) actors.splice(actors.findIndex((a) => a.id === i), 1); };
+  // Scenes with placed tokens: linked and unlinked tokens both carry actorId (their base actor).
+  const scenes = [];
+  const addScene = (name) => {
+    const tokens = coll([]);
+    const scene = { name, tokens, deleteEmbeddedDocuments: async (_t, ids) => { for (const i of ids) tokens.splice(tokens.findIndex((t) => t.id === i), 1); } };
+    scenes.push(scene);
+    return scene;
+  };
+  const place = (scene, actor, { linked = true } = {}) => scene.tokens.push({ id: id(), actorId: actor.id, name: actor.name, actorLink: linked });
+  const game = { version: "14.368", system: { id: "dnd5e", version: "6.0.5" }, folders, actors, journal, scenes, user: { id: "gm", isGM: true }, users: { activeGM: { id: "gm" } } };
+  return { game, Folder, Actor, JournalEntry, folders, actors, journal, scenes, addScene, place };
 }
 
-function connector(world, campaignId) {
+function connector(world, campaignId, log = () => {}) {
   return createConnector({
     game: world.game, Hooks: { on: () => 0, off: () => {} }, Actor: world.Actor, Folder: world.Folder, JournalEntry: world.JournalEntry,
     transport: async () => ({ status: 201, headers: {} }), settings: () => ({ shareNpcHp: false, sessionId: null }),
-    getCampaignId: () => campaignId, log: () => {},
+    getCampaignId: () => campaignId, log,
   });
 }
 const pkgFor = (sessionId, number, title) => {
@@ -132,6 +142,82 @@ describe("the import report says what the package contained (v0.1.1)", () => {
     expect(r.counts.basicActors).toBe(p.encounters.flatMap((e) => e.monsters).filter((m) => !m.monster).length);
     expect(r.counts.basicActors).toBeGreaterThan(0); // the fixture has a typed-in combatant
     expect(r.counts.reveals).toBe(p.reveals.length);
+  });
+});
+
+describe("re-import prunes NPCs that are no longer player-visible (v0.1.3)", () => {
+  const npcKey = (a) => a.getFlag("the-long-rest", "key");
+  const npcsOf = (w, cid, sid) => w.actors.filter((a) => npcKey(a)?.startsWith(`c:${cid}:session:${sid}:npc:`));
+
+  it("an NPC set back to Hidden: its actor AND its tokens (linked and unlinked, every scene) are removed", async () => {
+    const w = fakeWorld();
+    const lines = [];
+    const c = connector(w, CAMPAIGN_A, (m) => lines.push(m));
+    const full = pkgFor(S1, 1, "One");
+    await c.importPackage(full, { sessionId: S1 });
+    const [gone, kept] = npcsOf(w, CAMPAIGN_A, S1);
+    const s1 = w.addScene("Tavern");
+    const s2 = w.addScene("Road");
+    w.place(s1, gone);
+    w.place(s2, gone, { linked: false });
+    w.place(s1, kept);
+    const hidden = { ...full, npcs: full.npcs.filter((n) => !npcKey(gone).endsWith(n.id)) };
+    const r = await c.importPackage(hidden, { sessionId: S1 });
+    expect(r.removed).toEqual({ npcs: 1, tokens: 2 });
+    expect(w.actors).not.toContain(gone);
+    expect(w.actors).toContain(kept);
+    expect([...s1.tokens, ...s2.tokens].map((t) => t.actorId)).toEqual([kept.id]);
+    expect(lines.join("\n")).toContain(gone.name); // names go to the GM console only…
+    expect(JSON.stringify(r)).not.toContain(gone.name); // …never into the report (the notice)
+  });
+
+  it("everything hidden (an EMPTY package) removes all of the session's NPCs", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    const full = pkgFor(S1, 1, "One");
+    await c.importPackage(full, { sessionId: S1 });
+    const r = await c.importPackage({ ...full, npcs: [], encounters: [], reveals: [] }, { sessionId: S1 });
+    expect(r.removed.npcs).toBe(full.npcs.length);
+    expect(npcsOf(w, CAMPAIGN_A, S1)).toEqual([]);
+    expect(r.counts).toMatchObject({ npcs: 0, encounterActors: 0, reveals: 0 });
+  });
+
+  it("never touches another session's, another campaign's, encounter monsters, or hand-made actors", async () => {
+    const w = fakeWorld();
+    const full = pkgFor(S1, 1, "One");
+    await connector(w, CAMPAIGN_A).importPackage(full, { sessionId: S1 });
+    await connector(w, CAMPAIGN_A).importPackage(pkgFor(S2, 2, "Two"), { sessionId: S2 });
+    await connector(w, CAMPAIGN_B).importPackage(pkgFor(S1, 1, "Other campaign"), { sessionId: S1 });
+    const handMade = await w.Actor.create({ name: full.npcs[0].name, type: "npc" }); // same name, no flag
+    const monsters = w.actors.filter((a) => npcKey(a)?.includes(":monster:") || npcKey(a)?.includes(":combatant:"));
+    const before = new Set(w.actors.map((a) => a.id));
+    const r = await connector(w, CAMPAIGN_A).importPackage({ ...full, npcs: [] }, { sessionId: S1 });
+    const removedIds = [...before].filter((i) => !w.actors.some((a) => a.id === i));
+    expect(removedIds.length).toBe(r.removed.npcs);
+    expect(npcsOf(w, CAMPAIGN_A, S2)).toHaveLength(full.npcs.length);
+    expect(npcsOf(w, CAMPAIGN_B, S1)).toHaveLength(full.npcs.length);
+    expect(w.actors).toContain(handMade);
+    for (const m of monsters) expect(w.actors).toContain(m);
+  });
+
+  it("a mismatched session, a missing session id, or a failed actor removes nothing", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    const full = pkgFor(S1, 1, "One");
+    await c.importPackage(full, { sessionId: S1 });
+    const n = w.actors.length;
+    const none = { ...full, npcs: [] };
+    expect((await c.importPackage(none, { sessionId: S2 })).removed.npcs).toBe(0); // the package isn't S2's
+    expect((await c.importPackage(none)).removed.npcs).toBe(0); // no requested session
+    const broken = { ...full, npcs: [], encounters: [{ ...full.encounters[0], monsters: [{ name: "Broken", count: 1, monster: { id: "x", statblock: null } }] }] };
+    const origCreate = w.Actor.create;
+    w.Actor.create = async (d) => { if (d.name === "Broken") throw new Error("boom"); return origCreate(d); };
+    const r = await c.importPackage(broken, { sessionId: S1 });
+    expect(r.errors.length).toBeGreaterThan(0);
+    expect(r.removed.npcs).toBe(0);
+    expect(r.pruneSkipped).toMatch(/failed/);
+    expect(npcsOf(w, CAMPAIGN_A, S1)).toHaveLength(full.npcs.length);
+    expect(w.actors.length).toBeGreaterThanOrEqual(n);
   });
 });
 

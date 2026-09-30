@@ -47,6 +47,24 @@ Nothing flows back into your fights, HP or scenes.
 To remove it: revoke the token in The Long Rest, then disable the module. Imported actors and journals
 stay as ordinary Foundry documents.
 
+## What it looks like
+
+![The Connect window: The Long Rest's address, a masked VTT connector token, and the two options](docs/images/connect.png)
+
+*Connect: paste a VTT connector token and click **Test connection** (it saves too).*
+
+![The Actors directory header with the Import TLR button](docs/images/import-button.png)
+
+*Import TLR in the Actors directory brings in the running session's prep.*
+
+![An imported session: an encounter folder with its monsters, and an NPCs folder](docs/images/import-folder.png)
+
+*An imported session: one folder per encounter, plus the NPCs your players may see.*
+
+![The session's reveals journal, one page per fact your players have learned](docs/images/reveals.png)
+
+*The reveals journal: one page per revealed fact, updated while the session runs.*
+
 ## Development
 
 ```bash

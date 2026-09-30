@@ -16,6 +16,7 @@ export function importSummary(report) {
     out.push({ level: "info", key: "TLR.Import.Done", data: { created: report.created, updated: report.updated } });
     if (c?.basicActors) out.push({ level: "info", key: "TLR.Import.BasicActors", data: { count: c.basicActors } });
   }
+  if (report?.removed?.npcs) out.push({ level: "info", key: "TLR.Import.Removed", data: { count: report.removed.npcs } });
   const misses = Object.keys(report?.misses ?? {}).length;
   if (misses) out.push({ level: "warn", key: "TLR.Import.Misses", data: { count: misses } });
   if (report?.errors?.length) out.push({ level: "error", key: "TLR.Import.Errors", data: { count: report.errors.length } });

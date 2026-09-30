@@ -232,7 +232,44 @@ export function createConnector({ game, Hooks, Actor, Folder, JournalEntry, tran
     return misses;
   }
 
-  async function importPackage(pkg) {
+  /**
+   * Remove the NPC actors THIS import's session used to have but the package no longer contains (the DM
+   * set them back to Hidden, or detached them). The package can't name hidden NPCs, so absence is the
+   * signal; only called after a successful create/update pass. Only our own `:npc:` actors under this
+   * campaign + session's key are candidates: never encounter monsters, other sessions, other campaigns
+   * or hand-made actors. Their placed tokens go first (a token keeps the name and image), on every scene.
+   */
+  async function pruneHiddenNpcs(plan, report) {
+    const root = plan.folders.find((f) => !f.parentKey)?.key;
+    if (!root) return;
+    const prefix = `${root}:npc:`;
+    const keep = new Set(plan.actors.filter((a) => a.key.startsWith(prefix)).map((a) => a.key));
+    const stale = game.actors.filter((a) => {
+      const k = a.getFlag(MODULE_ID, "key");
+      return typeof k === "string" && k.startsWith(prefix) && !keep.has(k);
+    });
+    if (!stale.length) return;
+    const ids = new Set(stale.map((a) => a.id));
+    for (const scene of game.scenes ?? []) {
+      // Linked and unlinked tokens both reference their base actor by actorId.
+      const tokens = scene.tokens.filter((t) => ids.has(t.actorId)).map((t) => t.id);
+      if (tokens.length) {
+        await scene.deleteEmbeddedDocuments("Token", tokens);
+        report.removed.tokens += tokens.length;
+      }
+    }
+    const names = stale.map((a) => a.name);
+    await Actor.deleteDocuments([...ids]);
+    report.removed.npcs = ids.size;
+    log(`${MODULE_ID} | removed ${ids.size} NPC(s) no longer visible in The Long Rest: ${names.join(", ")}`); // GM console only
+  }
+
+  /**
+   * @param {object} pkg the session package (a 200 that parsed)
+   * @param {{ sessionId?: string }} [opts] the session that was REQUESTED; stale NPCs are pruned only
+   *   when the package is that session's (never on a mismatch, never without it)
+   */
+  async function importPackage(pkg, { sessionId = null } = {}) {
     if (!gate.ok) throw new Error(gate.reason);
     const started = Date.now();
     const plan = planFromPackage(pkg, { campaignId: getCampaignId() });
@@ -246,7 +283,7 @@ export function createConnector({ game, Hooks, Actor, Folder, JournalEntry, tran
       basicActors: plan.actors.filter((a) => a.key.includes(":combatant:")).length,
       reveals: plan.journal.pages.length,
     };
-    const report = { packageVersion: plan.packageVersion, created: 0, updated: 0, misses: {}, errors: [], counts };
+    const report = { packageVersion: plan.packageVersion, created: 0, updated: 0, misses: {}, errors: [], counts, removed: { npcs: 0, tokens: 0 }, pruneSkipped: null };
     for (const a of plan.actors) {
       try {
         const folder = idByKey.get(a.folderKey) ?? null;
@@ -269,6 +306,11 @@ export function createConnector({ game, Hooks, Actor, Folder, JournalEntry, tran
       }
     }
     report.journal = await upsertJournal(plan.journal);
+    // Remove last, and only when everything above succeeded for THIS session's package.
+    if (!sessionId || pkg?.session?.id !== sessionId) report.pruneSkipped = "not this session's package";
+    else if (report.errors.length) report.pruneSkipped = "some actors failed to import";
+    else await pruneHiddenNpcs(plan, report);
+    if (report.pruneSkipped && sessionId) log(`${MODULE_ID} | kept all NPCs: ${report.pruneSkipped}`);
     report.ms = Date.now() - started;
     metrics.imports.push(report);
     return report;

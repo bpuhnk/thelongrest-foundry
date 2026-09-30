@@ -24,5 +24,6 @@ export async function importSession({ transport, connector, sessionId }) {
   const res = await transport.request({ method: "GET", path: `/api/v1/sessions/${id}/package` });
   if (res.status === 404) throw new Error("That session isn't in this campaign.");
   if (res.status !== 200) throw new Error(`Couldn't fetch the session (${res.status}).`);
-  return connector.importPackage(res.body);
+  // The requested id goes along: the importer only prunes NPCs when the package is this session's.
+  return connector.importPackage(res.body, { sessionId: id });
 }

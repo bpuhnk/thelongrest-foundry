@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.3
+
+- **Re-importing removes NPCs your players can no longer see.** If you set an imported NPC back to
+  *Hidden* in The Long Rest, or take it out of the session, the next **Import TLR** for that session
+  removes its actor, and its tokens on every scene (a placed token would still show the name and
+  image). Foundry sends every actor to every player's browser, so a hidden NPC mustn't stay in the world.
+  - Only NPCs are removed. Encounter monsters and revealed facts stay, as before.
+  - Only NPCs this module imported for that session and campaign: never ones you made yourself, or
+    another session's or campaign's.
+  - Nothing is removed if the import didn't complete (the session couldn't be fetched, or an actor
+    failed to import).
+  - The import notice says how many NPCs were removed; their names are written only to the GM's
+    browser console.
+
 ## 0.1.2
 
 - **The Import TLR button now appears straight after a world launches.** The Actors directory first

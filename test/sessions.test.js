@@ -39,7 +39,7 @@ describe("importSession", () => {
     const t = makeTransport({ [`GET /api/v1/sessions/${S1}/package`]: ok(PKG) }, { campaign: { activeSession: { id: S1 } } });
     const connector = { importPackage: vi.fn(async () => ({ created: 2, updated: 0 })) };
     expect(await importSession({ transport: t, connector })).toEqual({ created: 2, updated: 0 });
-    expect(connector.importPackage).toHaveBeenCalledWith(PKG);
+    expect(connector.importPackage).toHaveBeenCalledWith(PKG, { sessionId: S1 });
     expect(t.request.mock.calls.map(([r]) => `${r.method} ${r.path}`)).toEqual([`GET /api/v1/sessions/${S1}/package`]);
   });
 
@@ -73,5 +73,21 @@ describe("listSessions", () => {
   it("labels sessions for the picker", async () => {
     const t = makeTransport({ "GET /api/v1/sessions?limit=20": ok({ sessions: [{ id: S1, number: 3, title: "The Pass", status: "ACTIVE" }] }) });
     expect(await listSessions(t)).toEqual([{ id: S1, label: "Session 3: The Pass", status: "ACTIVE" }]);
+  });
+});
+
+describe("importSession never prunes on a failed fetch", () => {
+  it("a non-200 package throws before the importer runs, so nothing can be removed", async () => {
+    const importPackage = vi.fn();
+    const t = makeTransport({ [`GET /api/v1/sessions/${S1}/package`]: { status: 502, headers: {}, body: null } });
+    await expect(importSession({ transport: t, connector: { importPackage }, sessionId: S1 })).rejects.toThrow(/\(502\)/);
+    expect(importPackage).not.toHaveBeenCalled();
+  });
+
+  it("passes the REQUESTED session id to the importer (pruning needs it to match the package)", async () => {
+    const importPackage = vi.fn(async () => ({}));
+    const t = makeTransport({ [`GET /api/v1/sessions/${S2}/package`]: ok(PKG) });
+    await importSession({ transport: t, connector: { importPackage }, sessionId: S2 });
+    expect(importPackage).toHaveBeenCalledWith(PKG, { sessionId: S2 });
   });
 });

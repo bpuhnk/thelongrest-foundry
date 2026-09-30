@@ -27,6 +27,15 @@ describe("importSummary", () => {
     ]);
   });
 
+  it("reports removed NPCs, including on an empty import (the removal line comes after the explanation)", () => {
+    expect(importSummary(report({ npcs: 0, encounterActors: 0, basicActors: 0, reveals: 0 }, { removed: { npcs: 2, tokens: 3 } }))).toEqual([
+      { level: "warn", key: "TLR.Import.Empty" },
+      { level: "info", key: "TLR.Import.Removed", data: { count: 2 } },
+    ]);
+    expect(keys(report({ npcs: 1, encounterActors: 0, basicActors: 0, reveals: 0 }, { created: 1, removed: { npcs: 1, tokens: 0 } }))).toEqual(["TLR.Import.Done", "TLR.Import.Removed"]);
+    expect(keys(report({ npcs: 1, encounterActors: 0, basicActors: 0, reveals: 0 }, { removed: { npcs: 0, tokens: 0 } }))).toEqual(["TLR.Import.Done"]);
+  });
+
   it("keeps the misses and errors notices", () => {
     expect(keys(report({ npcs: 2, encounterActors: 0, basicActors: 0, reveals: 0 }, { misses: { A: [] }, errors: [{}] }))).toEqual(["TLR.Import.Done", "TLR.Import.Misses", "TLR.Import.Errors"]);
   });
@@ -59,7 +68,8 @@ describe("the English strings", () => {
   it("exist for every key the summary can produce, and the empty one says what to do", async () => {
     const { readFileSync } = await import("node:fs");
     const en = JSON.parse(readFileSync(new URL("../src/lang/en.json", import.meta.url), "utf8"));
-    for (const k of ["TLR.Import.Empty", "TLR.Import.BasicActors", "TLR.Import.Done", "TLR.Import.Misses", "TLR.Import.Errors"]) expect(en[k], k).toBeTruthy();
+    for (const k of ["TLR.Import.Empty", "TLR.Import.BasicActors", "TLR.Import.Removed", "TLR.Import.Done", "TLR.Import.Misses", "TLR.Import.Errors"]) expect(en[k], k).toBeTruthy();
+    expect(en["TLR.Import.Removed"]).toMatch(/no longer visible in The Long Rest \(and their tokens\)/);
     expect(en["TLR.Import.Empty"]).toMatch(/Card only or Full details.*link combat beats to encounters.*reveal a fact/);
   });
 });
