@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Refuse a push while ANY commit reachable locally (messages included) or any tracked file would fail
+# the leak scan. Commit messages are content too: one once named an internal host. Scanning here,
+# before the push, keeps a finding from ever reaching the remote.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+# The private patterns file (.leak-patterns.local.json, gitignored) is REQUIRED: without it the scan
+# would only know the generic rules. History: only the commits this push would add.
+if ! node scripts/leak-scan.mjs --history --require-private --private-history=unpushed:origin; then
+  echo "pre-push: the leak scan failed (or .leak-patterns.local.json is missing). Fix the finding (amend the commit or its message), or restore the private patterns file, before pushing." >&2
+  exit 1
+fi

@@ -1,0 +1,22 @@
+{
+  "TLR.Title": "The Long Rest",
+  "TLR.Settings.Menu": "Connect",
+  "TLR.Settings.MenuHint": "Connect this world to your campaign in The Long Rest.",
+  "TLR.Settings.Intro": "Paste a VTT connector token from The Long Rest (Campaign Settings → API access).",
+  "TLR.Settings.BaseUrl": "The Long Rest address",
+  "TLR.Settings.Token": "VTT connector token",
+  "TLR.Settings.TokenSaved": "•••• saved (leave empty to keep)",
+  "TLR.Settings.TokenWarning": "The token is saved only in this browser. Other modules installed in this world can read it, which is why it must be a VTT connector token: it can't change your campaign. Revoke it in The Long Rest if you uninstall this module.",
+  "TLR.Settings.ShareNpcHp": "Share exact NPC and monster HP (off: only whether they're down)",
+  "TLR.Settings.AnnounceReveals": "Announce newly revealed facts in chat",
+  "TLR.Settings.Test": "Test connection",
+  "TLR.Settings.Disconnect": "Disconnect",
+  "TLR.Settings.Save": "Save",
+  "TLR.Import.Button": "Import session prep",
+  "TLR.Import.Done": "The Long Rest: {created} created, {updated} updated.",
+  "TLR.Import.Misses": "{count} actor(s) had fields this dnd5e version stored differently; check them.",
+  "TLR.Disabled": "The Long Rest is disabled: {reason}",
+  "TLR.Import.Session": "Session to import",
+  "TLR.Import.Running": "The running session",
+  "TLR.Import.Errors": "The Long Rest: {count} actor(s) couldn't be imported; see the console."
+}

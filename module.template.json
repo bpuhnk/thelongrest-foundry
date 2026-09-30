@@ -1,0 +1,20 @@
+{
+  "id": "the-long-rest",
+  "title": "The Long Rest",
+  "description": "Bring your session prep from The Long Rest into Foundry, and send what happens at the table back to your campaign.",
+  "version": "{{version}}",
+  "authors": [{ "name": "Benjamin Phillips" }],
+  "license": "LICENSE",
+  "readme": "README.md",
+  "url": "https://github.com/bpuhnk/thelongrest-foundry",
+  "bugs": "https://github.com/bpuhnk/thelongrest-foundry/issues",
+  "changelog": "https://github.com/bpuhnk/thelongrest-foundry/blob/main/CHANGELOG.md",
+  "manifest": "https://github.com/bpuhnk/thelongrest-foundry/releases/latest/download/module.json",
+  "download": "https://github.com/bpuhnk/thelongrest-foundry/releases/download/v{{version}}/module.zip",
+  "compatibility": { "minimum": "14.367", "verified": "14.368" },
+  "relationships": {
+    "systems": [{ "id": "dnd5e", "type": "system", "compatibility": { "minimum": "6.0.0", "verified": "6.0.5" } }]
+  },
+  "esmodules": ["scripts/the-long-rest.js"],
+  "languages": [{ "lang": "en", "name": "English", "path": "lang/en.json" }]
+}

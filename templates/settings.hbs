@@ -1,0 +1,50 @@
+<section class="tlr-settings standard-form">
+  <p class="notes">{{localize "TLR.Settings.Intro"}}</p>
+
+  <div class="form-group">
+    <label for="tlr-baseUrl">{{localize "TLR.Settings.BaseUrl"}}</label>
+    <input id="tlr-baseUrl" type="url" name="baseUrl" value="{{baseUrl}}" required>
+  </div>
+
+  <div class="form-group">
+    <label for="tlr-token">{{localize "TLR.Settings.Token"}}</label>
+    {{!-- The saved token is NEVER rendered into the page; an empty field keeps it. --}}
+    <input id="tlr-token" type="password" name="token" value="" autocomplete="off" placeholder="{{#if hasToken}}{{localize "TLR.Settings.TokenSaved"}}{{else}}tlr_…{{/if}}">
+  </div>
+  <p class="notes tlr-warning">{{localize "TLR.Settings.TokenWarning"}}</p>
+
+  <div class="form-group">
+    <label><input type="checkbox" name="shareNpcHp" {{checked shareNpcHp}}> {{localize "TLR.Settings.ShareNpcHp"}}</label>
+  </div>
+  <div class="form-group">
+    <label><input type="checkbox" name="announceReveals" {{checked announceReveals}}> {{localize "TLR.Settings.AnnounceReveals"}}</label>
+  </div>
+
+  {{#if status}}
+    <div class="tlr-status {{#if status.ok}}ok{{else}}error{{/if}}" role="status">
+      {{#if status.ok}}
+        <strong>{{status.campaign}}</strong>{{#if status.session}} · {{status.session}}{{/if}}
+        {{#if status.warning}}<p>{{status.warning}}</p>{{/if}}
+      {{else}}
+        {{status.message}}
+      {{/if}}
+    </div>
+  {{/if}}
+
+  {{#if sessions.length}}
+    <div class="form-group">
+      <label for="tlr-session">{{localize "TLR.Import.Session"}}</label>
+      <select id="tlr-session" name="sessionId">
+        <option value="">{{localize "TLR.Import.Running"}}</option>
+        {{#each sessions}}<option value="{{id}}" {{#if selected}}selected{{/if}}>{{label}}</option>{{/each}}
+      </select>
+    </div>
+  {{/if}}
+
+  <footer class="form-footer">
+    <button type="button" data-action="test"><i class="fa-solid fa-plug"></i> {{localize "TLR.Settings.Test"}}</button>
+    <button type="button" data-action="import" {{#unless connected}}disabled{{/unless}}><i class="fa-solid fa-download"></i> {{localize "TLR.Import.Button"}}</button>
+    <button type="button" data-action="disconnect"><i class="fa-solid fa-link-slash"></i> {{localize "TLR.Settings.Disconnect"}}</button>
+    <button type="submit"><i class="fa-solid fa-floppy-disk"></i> {{localize "TLR.Settings.Save"}}</button>
+  </footer>
+</section>

@@ -1,0 +1,19 @@
+{
+  "name": "thelongrest-foundry",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Long Rest companion module for Foundry VTT (dnd5e).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "vitest run",
+    "build": "node scripts/build.mjs",
+    "leak-scan": "node scripts/leak-scan.mjs",
+    "check": "npm test && npm run leak-scan && npm run build",
+    "prepare": "git config core.hooksPath .githooks"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0",
+    "vitest": "^3.2.0"
+  }
+}
