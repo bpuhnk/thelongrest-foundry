@@ -9,6 +9,15 @@ import { makePackage } from "./fixtures/package.js";
 const CAMPAIGN_A = "00000000-0000-4000-8000-0000000000ca";
 const CAMPAIGN_B = "00000000-0000-4000-8000-0000000000cb";
 
+// Like foundry.utils.mergeObject for an update: nested objects merge, they don't replace.
+function merge(target, u) {
+  for (const [k, v] of Object.entries(u)) {
+    if (v && typeof v === "object" && !Array.isArray(v) && target[k] && typeof target[k] === "object") merge(target[k], v);
+    else target[k] = v;
+  }
+  return target;
+}
+
 function fakeWorld() {
   let n = 0;
   const id = () => `doc${(++n).toString().padStart(12, "0")}`;
@@ -31,7 +40,7 @@ function fakeWorld() {
       const a = withFlags({ id: id(), ...JSON.parse(JSON.stringify(data)) });
       a._source = a;
       a.items = makeItems(a.items ?? []);
-      a.update = async (u) => void Object.assign(a, u);
+      a.update = async (u) => void merge(a, u);
       a.createEmbeddedDocuments = async (_t, items) => void a.items.push(...makeItems(items));
       a.deleteEmbeddedDocuments = async (_t, ids) => { for (const i of ids) a.items.splice(a.items.findIndex((x) => x.id === i), 1); };
       actors.push(a);
@@ -53,11 +62,23 @@ function fakeWorld() {
   const scenes = [];
   const addScene = (name) => {
     const tokens = coll([]);
-    const scene = { name, tokens, deleteEmbeddedDocuments: async (_t, ids) => { for (const i of ids) tokens.splice(tokens.findIndex((t) => t.id === i), 1); } };
+    const scene = {
+      name, tokens,
+      deleteEmbeddedDocuments: async (_t, ids) => { for (const i of ids) tokens.splice(tokens.findIndex((t) => t.id === i), 1); },
+      updateEmbeddedDocuments: async (_t, updates) => {
+        for (const { _id, ...u } of updates) merge(tokens.find((t) => t.id === _id), u);
+        for (const u of updates) delete u._id; // Foundry cleans the data it was given
+      },
+    };
     scenes.push(scene);
     return scene;
   };
-  const place = (scene, actor, { linked = true } = {}) => scene.tokens.push({ id: id(), actorId: actor.id, name: actor.name, actorLink: linked });
+  // A placed token copies the prototype's art at placement (or the GM gives it its own).
+  const place = (scene, actor, { linked = true, src } = {}) => {
+    const t = { id: id(), actorId: actor.id, name: actor.name, actorLink: linked, texture: { src: src ?? actor.prototypeToken?.texture?.src } };
+    scene.tokens.push(t);
+    return t;
+  };
   const game = { version: "14.368", system: { id: "dnd5e", version: "6.0.5" }, folders, actors, journal, scenes, user: { id: "gm", isGM: true }, users: { activeGM: { id: "gm" } } };
   return { game, Folder, Actor, JournalEntry, folders, actors, journal, scenes, addScene, place };
 }
@@ -221,3 +242,83 @@ describe("re-import prunes NPCs that are no longer player-visible (v0.1.3)", () 
   });
 });
 
+
+describe("NPC portraits on the actor, its prototype token and placed tokens (v0.1.5)", () => {
+  const OLD = "https://cdn.example.test/portraits/old.webp";
+  const NEW = "https://cdn.example.test/portraits/new.webp";
+  const CUSTOM = "worlds/art/gm-own-token.webp";
+  const withPortrait = (p, url) => ({ ...p, npcs: p.npcs.map((n, i) => (i === 0 ? { ...n, avatarUrl: url } : n)) });
+  const npcs = (w) => w.actors.filter((a) => a.getFlag("the-long-rest", "key")?.includes(":npc:"));
+
+  it("a new NPC actor's prototype token uses the portrait; anything not https falls back for both", async () => {
+    const w = fakeWorld();
+    const p = pkgFor(S1, 1, "One");
+    await connector(w, CAMPAIGN_A).importPackage({ ...p, npcs: [{ ...p.npcs[0], avatarUrl: OLD }, { ...p.npcs[1], avatarUrl: "javascript:alert(1)" }] });
+    const [a, b] = npcs(w);
+    expect(a.img).toBe(OLD);
+    expect(a.prototypeToken.texture.src).toBe(OLD);
+    expect(b.img).toBe("icons/svg/mystery-man.svg");
+    expect(b.prototypeToken.texture.src).toBe("icons/svg/mystery-man.svg");
+    for (const bad of ["http://x.test/a.webp", "data:image/png;base64,AA", "//x.test/a.webp", 42]) {
+      const w2 = fakeWorld();
+      await connector(w2, CAMPAIGN_A).importPackage(withPortrait(p, bad));
+      expect(npcs(w2)[0].prototypeToken.texture.src, String(bad)).toBe("icons/svg/mystery-man.svg");
+    }
+  });
+
+  it("a CHANGED portrait updates the actor, its prototype token and placed tokens still showing the old one", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    const p = pkgFor(S1, 1, "One");
+    await c.importPackage(withPortrait(p, OLD), { sessionId: S1 });
+    const [npc, other] = npcs(w);
+    const tavern = w.addScene("Tavern");
+    const road = w.addScene("Road");
+    const linked = w.place(tavern, npc);
+    const unlinked = w.place(road, npc, { linked: false });
+    const custom = w.place(road, npc, { src: CUSTOM });
+    const otherTok = w.place(tavern, other, { src: OLD }); // another actor that happens to share the old art
+    const r = await c.importPackage(withPortrait(p, NEW), { sessionId: S1 });
+    expect(npc.img).toBe(NEW);
+    expect(npc.prototypeToken.texture.src).toBe(NEW);
+    expect(npc.prototypeToken.actorLink).toBe(true); // merged, not replaced
+    expect(linked.texture.src).toBe(NEW);
+    expect(unlinked.texture.src).toBe(NEW);
+    expect(custom.texture.src).toBe(CUSTOM); // the GM's own token art is never overwritten
+    expect(otherTok.texture.src).toBe(OLD); // only THIS actor's tokens
+    expect(r.portraits).toEqual({ actors: 1, tokens: 2 });
+    // And a portrait REMOVED in TLR goes back to the default, for tokens that still showed it.
+    const r2 = await c.importPackage(withPortrait(p, null), { sessionId: S1 });
+    expect(npc.img).toBe("icons/svg/mystery-man.svg");
+    expect(linked.texture.src).toBe("icons/svg/mystery-man.svg");
+    expect(r2.portraits).toEqual({ actors: 1, tokens: 2 });
+  });
+
+  it("an UNCHANGED portrait leaves the GM's own actor image and token art alone", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    const p = withPortrait(pkgFor(S1, 1, "One"), OLD);
+    await c.importPackage(p, { sessionId: S1 });
+    const [npc] = npcs(w);
+    await npc.update({ img: CUSTOM, prototypeToken: { texture: { src: CUSTOM } } }); // the GM's edit
+    const r = await c.importPackage(p, { sessionId: S1 });
+    expect(npc.img).toBe(CUSTOM);
+    expect(npc.prototypeToken.texture.src).toBe(CUSTOM);
+    expect(r.portraits).toEqual({ actors: 0, tokens: 0 });
+    expect(r.updated).toBeGreaterThan(0);
+  });
+
+  it("an actor imported before 0.1.5 (no portrait flag): its img counts as the old portrait", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    const p = pkgFor(S1, 1, "One");
+    await c.importPackage(withPortrait(p, OLD), { sessionId: S1 });
+    const [npc] = npcs(w);
+    delete npc.flags["the-long-rest"].portrait;
+    const tok = w.place(w.addScene("Tavern"), npc, { src: OLD });
+    const r = await c.importPackage(withPortrait(p, NEW), { sessionId: S1 });
+    expect(tok.texture.src).toBe(NEW);
+    expect(npc.getFlag("the-long-rest", "portrait")).toBe(NEW);
+    expect(r.portraits).toEqual({ actors: 1, tokens: 1 });
+  });
+});

@@ -71,5 +71,6 @@ describe("the English strings", () => {
     for (const k of ["TLR.Import.Empty", "TLR.Import.BasicActors", "TLR.Import.Removed", "TLR.Import.Done", "TLR.Import.Misses", "TLR.Import.Errors"]) expect(en[k], k).toBeTruthy();
     expect(en["TLR.Import.Removed"]).toMatch(/no longer visible in The Long Rest \(and their tokens\)/);
     expect(en["TLR.Import.Empty"]).toMatch(/Card only or Full details.*link combat beats to encounters.*reveal a fact/);
+    expect(en["TLR.Import.Empty"]).toMatch(/add them to the session's NPC list/);
   });
 });

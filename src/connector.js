@@ -265,6 +265,22 @@ export function createConnector({ game, Hooks, Actor, Folder, JournalEntry, tran
   }
 
   /**
+   * A changed TLR portrait → the tokens already PLACED for that actor (every scene, linked or not), but
+   * only those still showing the OLD portrait: a token the GM gave its own art is left alone.
+   * @returns {Promise<number>} how many tokens were updated
+   */
+  async function retexturePlacedTokens(actorId, from, to) {
+    let n = 0;
+    for (const scene of game.scenes ?? []) {
+      const ids = scene.tokens.filter((t) => t.actorId === actorId && t.texture?.src === from).map((t) => t.id);
+      if (!ids.length) continue;
+      await scene.updateEmbeddedDocuments("Token", ids.map((_id) => ({ _id, texture: { src: to } })));
+      n += ids.length;
+    }
+    return n;
+  }
+
+  /**
    * @param {object} pkg the session package (a 200 that parsed)
    * @param {{ sessionId?: string }} [opts] the session that was REQUESTED; stale NPCs are pruned only
    *   when the package is that session's (never on a mismatch, never without it)
@@ -283,14 +299,29 @@ export function createConnector({ game, Hooks, Actor, Folder, JournalEntry, tran
       basicActors: plan.actors.filter((a) => a.key.includes(":combatant:")).length,
       reveals: plan.journal.pages.length,
     };
-    const report = { packageVersion: plan.packageVersion, created: 0, updated: 0, misses: {}, errors: [], counts, removed: { npcs: 0, tokens: 0 }, pruneSkipped: null };
+    const report = { packageVersion: plan.packageVersion, created: 0, updated: 0, misses: {}, errors: [], counts, removed: { npcs: 0, tokens: 0 }, portraits: { actors: 0, tokens: 0 }, pruneSkipped: null };
     for (const a of plan.actors) {
       try {
         const folder = idByKey.get(a.folderKey) ?? null;
         let actor = game.actors.find((x) => x.getFlag(MODULE_ID, "key") === a.key);
         const { items, ownership, ...rest } = a.data;
         if (actor) {
-          await actor.update({ ...rest, folder });
+          const update = { ...rest, folder };
+          const portrait = rest.flags?.[MODULE_ID]?.portrait; // NPCs only
+          // What we set LAST time (pre-0.1.5 actors have no flag, but their img was always ours). Read
+          // before the update: Foundry changes the document (and cleans the data we pass) in place.
+          const previous = portrait === undefined ? undefined : actor.getFlag(MODULE_ID, "portrait") ?? actor.img;
+          if (portrait !== undefined && previous === portrait) {
+            // Unchanged in TLR: leave the actor's image and token art alone, so a GM's own art survives.
+            delete update.img;
+            const { texture: _t, ...proto } = update.prototypeToken ?? {};
+            update.prototypeToken = proto;
+          }
+          await actor.update(update);
+          if (portrait !== undefined && previous !== portrait) {
+            report.portraits.actors += 1;
+            report.portraits.tokens += await retexturePlacedTokens(actor.id, previous, portrait);
+          }
           const ours = actor.items.filter((i) => i.getFlag(MODULE_ID, "key")).map((i) => i.id);
           if (ours.length) await actor.deleteEmbeddedDocuments("Item", ours);
           if (items.length) await actor.createEmbeddedDocuments("Item", items);

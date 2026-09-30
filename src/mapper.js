@@ -352,6 +352,13 @@ function classLine(card) {
   return [card?.race, classes || (card?.level ? `level ${card.level}` : "")].filter(Boolean).join(" · ");
 }
 
+export const DEFAULT_PORTRAIT = "icons/svg/mystery-man.svg";
+
+/** An NPC's avatarUrl → the image Foundry shows: the URL when it is https, else Foundry's default. */
+export function portraitSrc(avatarUrl) {
+  return typeof avatarUrl === "string" && /^https:\/\//.test(avatarUrl) ? avatarUrl : DEFAULT_PORTRAIT;
+}
+
 /**
  * A TLR NPC → an npc Actor, honouring the package's visibility (the SERVER already filtered it):
  * CARD_ONLY → name, portrait and the card line only; FULL_DETAILS → + the player sheet's prose.
@@ -367,18 +374,22 @@ export function npcActor({ npc, folderKey, ownership, scope = "" }) {
       if (v) bio += `<p><strong>${label}:</strong> ${escapeHtml(v)}</p>`;
     }
   }
+  // The portrait is used for the actor AND its token, https only (never a data:/javascript:/relative
+  // path the server didn't mean). `portrait` in our flags is what WE last set, so a re-import can tell
+  // a changed portrait from art the GM put on the actor or its tokens.
+  const img = portraitSrc(npc.avatarUrl);
   const data = {
     name: String(npc.name).slice(0, 120),
     type: "npc",
-    img: npc.avatarUrl && /^https:\/\//.test(npc.avatarUrl) ? npc.avatarUrl : "icons/svg/mystery-man.svg",
+    img,
     ownership: ownership ?? { default: 0 },
     system: {
       details: { biography: { value: bio, public: bio } },
       attributes: npc.sheet?.armorClass ? { ac: { calc: "flat", flat: npc.sheet.armorClass } } : {},
     },
-    prototypeToken: { name: String(npc.name).slice(0, 120), actorLink: true, disposition: 0 },
+    prototypeToken: { name: String(npc.name).slice(0, 120), actorLink: true, disposition: 0, texture: { src: img } },
     items: [],
-    flags: { [MODULE_ID]: { key, kind: "npc", visibility: npc.visibility } },
+    flags: { [MODULE_ID]: { key, kind: "npc", visibility: npc.visibility, portrait: img } },
   };
   return { key, folderKey, data, expect: [["name", data.name], ["system.details.biography.value", bio]] };
 }

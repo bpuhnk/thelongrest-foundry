@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.1.5
+
+- **NPC tokens show the NPC's portrait.** An imported NPC's prototype token now uses its portrait from
+  The Long Rest (https images only, as for the actor), so a token you drag onto the map shows the face,
+  not the default silhouette.
+- **A changed portrait follows on re-import.** When an NPC's portrait changes in The Long Rest, the next
+  **Import TLR** updates the actor's image, its prototype token, and tokens already placed on any scene.
+  - Placed tokens are updated only if they still show the old portrait: a token you gave your own art
+    keeps it.
+  - If the portrait didn't change, the actor's image and token art are left alone, so your own edits
+    survive a re-import.
+- An empty import now also suggests adding NPCs to the session's NPC list in The Long Rest.
+
 ## 0.1.4
 
 - **Import TLR works on prep days.** With a session running in The Long Rest, **Import TLR** still imports
