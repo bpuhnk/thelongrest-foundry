@@ -12,6 +12,7 @@ import { createRevealPoller, makeAnnouncer } from "./reveals.js";
 import { RollQueue, queueKey } from "./roll-queue.js";
 import { importSession } from "./sessions.js";
 import { createTransport } from "./transport.js";
+import { importButtonProps } from "./ui/import-button.js";
 import { notifyError, notifyImport } from "./ui/notify.js";
 import { makeSettingsApp } from "./ui/settings-app.js";
 
@@ -130,7 +131,10 @@ Hooks.on("renderActorDirectory", (_app, html) => {
   button.dataset.tlrImport = "";
   const icon = document.createElement("i");
   icon.className = "fa-solid fa-campground";
-  button.append(icon, ` ${game.i18n.localize("TLR.Import.Button")}`);
+  const { label, tooltip } = importButtonProps((k) => game.i18n.localize(k));
+  button.append(icon, ` ${label}`);
+  button.dataset.tooltip = tooltip; // Foundry's tooltip convention
+  button.setAttribute("aria-label", tooltip);
   button.addEventListener("click", async () => {
     try {
       notifyImport(await importSession({ transport: services.transport, connector: services.connector }));

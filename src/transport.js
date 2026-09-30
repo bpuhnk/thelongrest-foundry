@@ -42,8 +42,8 @@ export function createTransport({ getBaseUrl, getToken, getExpectedCampaignId, c
   async function raw({ method, path, body, headers = {} }) {
     const base = String(getBaseUrl() || "").replace(/\/+$/, "");
     const token = String(getToken() || "");
-    if (!base) throw new TransportError("no-url", "Set The Long Rest's address in the module settings.");
-    if (!token) throw new TransportError("no-token", "Connect The Long Rest in the module settings first.");
+    if (!base) throw new TransportError("no-url", "Enter The Long Rest's address (usually https://thelongrest.app) and click Test connection or Save.");
+    if (!token) throw new TransportError("no-token", "Paste a VTT connector token from The Long Rest (Campaign Settings → API access) and click Test connection or Save.");
     let res;
     try {
       res = await fetchImpl(`${base}${path}`, {

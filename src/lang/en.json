@@ -18,5 +18,9 @@
   "TLR.Disabled": "The Long Rest is disabled: {reason}",
   "TLR.Import.Session": "Session to import",
   "TLR.Import.Running": "The running session",
-  "TLR.Import.Errors": "The Long Rest: {count} actor(s) couldn't be imported; see the console."
+  "TLR.Import.Errors": "The Long Rest: {count} actor(s) couldn't be imported; see the console.",
+  "TLR.Import.Empty": "The Long Rest: nothing player-visible in this session yet. In The Long Rest: set NPCs to Card only or Full details and attach them to a beat, link combat beats to encounters, or reveal a fact. Beats and DM notes always stay in The Long Rest.",
+  "TLR.Import.BasicActors": "The Long Rest: {count} combatant(s) had no Bestiary entry and came in as basic actors (AC, HP and attacks as text).",
+  "TLR.Import.ButtonShort": "Import TLR",
+  "TLR.Import.ButtonTooltip": "Import session prep from The Long Rest (the running session)"
 }

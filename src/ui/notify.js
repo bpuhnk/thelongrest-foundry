@@ -1,9 +1,10 @@
+import { importSummary } from "../import-summary.js";
+
 /** One place to report an import to the GM (the settings form and the Actors-directory button share it). */
 export function notifyImport(report) {
-  ui.notifications.info(game.i18n.format("TLR.Import.Done", { created: report.created, updated: report.updated }));
-  const misses = Object.keys(report.misses ?? {}).length;
-  if (misses) ui.notifications.warn(game.i18n.format("TLR.Import.Misses", { count: misses }));
-  if (report.errors?.length) ui.notifications.error(game.i18n.format("TLR.Import.Errors", { count: report.errors.length }));
+  for (const { level, key, data } of importSummary(report)) {
+    ui.notifications[level](data ? game.i18n.format(key, data) : game.i18n.localize(key), level === "warn" && key === "TLR.Import.Empty" ? { permanent: true } : undefined);
+  }
 }
 
 export function notifyError(err) {

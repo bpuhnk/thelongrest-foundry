@@ -3,7 +3,7 @@
  * Thin: the logic lives in connection.js / sessions.js, which are unit tested.
  */
 import { MODULE_ID } from "../mapper.js";
-import { disconnect, testConnection } from "../connection.js";
+import { disconnect, saveAndConnect } from "../connection.js";
 import { importSession, listSessions } from "../sessions.js";
 import { notifyError, notifyImport } from "./notify.js";
 
@@ -39,8 +39,20 @@ export function makeSettingsApp({ getServices }) {
     }
 
     /** Test the connection, and on success offer the campaign's sessions (the running one preselected). */
-    async #connect(transport, store) {
-      this.status = await testConnection({ transport, store });
+    /** The form's four fields, read from the DOM (the save/test logic lives in connection.js). */
+    #formData() {
+      const el = this.element;
+      const field = (name) => el.querySelector(`[name=${name}]`);
+      return { baseUrl: field("baseUrl")?.value ?? "", token: field("token")?.value ?? "", shareNpcHp: Boolean(field("shareNpcHp")?.checked), announceReveals: Boolean(field("announceReveals")?.checked) };
+    }
+
+    /**
+     * Save what's in the form, then test the connection. Save and Test connection both do this, so Test
+     * never checks stale settings while the new URL/token sit unsaved in the form (the v0.1.0 report).
+     */
+    async #saveAndConnect(data) {
+      const { store, transport } = getServices();
+      this.status = await saveAndConnect({ store, transport, data });
       this.sessions = null;
       getServices().onConnectionChanged();
       if (this.status.ok) {
@@ -55,19 +67,11 @@ export function makeSettingsApp({ getServices }) {
     }
 
     static async #onSubmit(_event, _form, formData) {
-      const { store, transport } = getServices();
-      const data = formData.object;
-      await store.set("baseUrl", String(data.baseUrl ?? "").trim());
-      if (data.token) await store.set("token", String(data.token).trim()); // empty keeps the saved one
-      await store.set("shareNpcHp", Boolean(data.shareNpcHp));
-      await store.set("announceReveals", Boolean(data.announceReveals));
-      transport.reset();
-      await this.#connect(transport, store);
+      await this.#saveAndConnect(formData.object);
     }
 
     static async #onTest() {
-      const { store, transport } = getServices();
-      await this.#connect(transport, store);
+      await this.#saveAndConnect(this.#formData());
     }
 
     static async #onImport() {

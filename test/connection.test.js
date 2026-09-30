@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { disconnect, testConnection } from "../src/connection.js";
+import { disconnect, saveAndConnect, saveForm, testConnection } from "../src/connection.js";
 import { TransportError } from "../src/transport.js";
 
 const CAMPAIGN = "00000000-0000-4000-8000-0000000000c1";
@@ -60,3 +60,40 @@ describe("disconnect", () => {
     expect(transport.reset).toHaveBeenCalled();
   });
 });
+
+describe("saveForm / saveAndConnect: Test connection uses what's in the form (v0.1.1)", () => {
+  const empty = () => { const data = { baseUrl: "https://thelongrest.app", token: "", campaignId: "", shareNpcHp: false, announceReveals: false }; return { data, get: (k) => data[k], set: vi.fn(async (k, v) => void (data[k] = v)) }; };
+
+  it("saves the form: trims the address and token, saves the checkboxes, drops any cached check", async () => {
+    const store = empty();
+    const transport = { reset: vi.fn() };
+    await saveForm({ store, transport, data: { baseUrl: "  https://tlr.example/  ", token: "  tlr_TEST_TOKEN_should_never_leak_0123456789abcdef ", shareNpcHp: true, announceReveals: "on" } });
+    expect(store.data).toMatchObject({ baseUrl: "https://tlr.example/", token: "tlr_TEST_TOKEN_should_never_leak_0123456789abcdef", shareNpcHp: true, announceReveals: true });
+    expect(transport.reset).toHaveBeenCalled();
+  });
+
+  it("an EMPTY token field keeps the saved token (the form never renders it back)", async () => {
+    const store = empty();
+    store.data.token = "tlr_TEST_TOKEN_should_never_leak_0123456789abcdef";
+    await saveForm({ store, transport: { reset() {} }, data: { baseUrl: "https://tlr.example", token: "   " } });
+    expect(store.data.token).toBe("tlr_TEST_TOKEN_should_never_leak_0123456789abcdef");
+  });
+
+  it("saveAndConnect tests the NEW values: pasting a token then clicking Test works without Save first", async () => {
+    const store = empty(); // nothing saved yet, as on a fresh install
+    const seen = [];
+    const transport = {
+      reset() {},
+      check: vi.fn(async () => {
+        seen.push({ url: store.get("baseUrl"), token: store.get("token") });
+        if (!store.get("token")) { const e = new Error("no token"); e.code = "no-token"; throw e; }
+        return verified();
+      }),
+    };
+    const r = await saveAndConnect({ store, transport, data: { baseUrl: "https://tlr.example", token: "tlr_TEST_TOKEN_should_never_leak_0123456789abcdef" }, now: NOW });
+    expect(r.ok).toBe(true);
+    expect(seen).toEqual([{ url: "https://tlr.example", token: "tlr_TEST_TOKEN_should_never_leak_0123456789abcdef" }]);
+    expect(store.data.campaignId).toBe(CAMPAIGN);
+  });
+});
+

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.1.1
+
+Fixes from the first real install.
+
+- **Test connection uses what's in the form.** Pasting the address and token and clicking **Test
+  connection** now saves them first (as **Save** does; an empty token field still keeps the saved
+  token), instead of testing the old, empty settings.
+- **Clearer connection messages.** With no token or no address, the message says what to do: paste a
+  VTT connector token from The Long Rest (Campaign Settings → API access), or enter the address, then
+  click **Test connection** or **Save**.
+- **An empty import explains itself.** When a session has nothing player-visible yet, the import says
+  why and how to change it (NPCs set to *Card only* or *Full details* and attached to a beat, combat beats
+  linked to encounters, or a revealed fact), instead of "0 created, 0 updated". Combatants typed in
+  without a Bestiary entry are reported as imported as basic actors.
+- **A shorter Actors-directory button:** it now reads **Import TLR** (the full "Import session prep
+  from The Long Rest" is its tooltip), so it fits the directory header. The Connect window's button is
+  unchanged.
+- **Releases:** a missed release can be run by hand from the repo's Actions tab, for an existing
+  version tag only (never overwriting a release).
+
 ## 0.1.0
 
 The first release. Needs Foundry v14 (14.367 or later) with the dnd5e 6.0 system.

@@ -31,3 +31,26 @@ export async function disconnect({ store, transport }) {
   await store.set("campaignId", "");
   transport.reset();
 }
+
+/**
+ * Save the Connect form's values, with the rules both buttons share: the address is trimmed; an EMPTY
+ * token field keeps the saved token (the form never renders it back); the checkboxes are saved as
+ * booleans. Any cached verification or latched refusal is dropped, so the next request re-checks.
+ * @param {{ store: { set(k: string, v: any): Promise<void> }, transport: { reset(): void },
+ *   data: { baseUrl?: string, token?: string, shareNpcHp?: boolean, announceReveals?: boolean } }} deps
+ */
+export async function saveForm({ store, transport, data }) {
+  await store.set("baseUrl", String(data.baseUrl ?? "").trim());
+  const token = String(data.token ?? "").trim();
+  if (token) await store.set("token", token);
+  await store.set("shareNpcHp", Boolean(data.shareNpcHp));
+  await store.set("announceReveals", Boolean(data.announceReveals));
+  transport.reset();
+}
+
+/** Save the form, then test the connection: what BOTH Save and Test connection do. */
+export async function saveAndConnect({ store, transport, data, now }) {
+  await saveForm({ store, transport, data });
+  return testConnection({ transport, store, now });
+}
+

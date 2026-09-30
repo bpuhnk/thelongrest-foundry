@@ -69,9 +69,16 @@ describe("transport", () => {
     expect(messages.join("\n")).not.toContain(TOKEN);
   });
 
-  it("no token or address → a settings message, no network call", async () => {
-    const t = createTransport({ getBaseUrl: () => "", getToken: () => TOKEN, getExpectedCampaignId: () => null, client: "c", fetchImpl });
-    await expect(t.check()).rejects.toBeInstanceOf(TransportError);
+  it("no token or address → a message that says what to do, no network call, never the token", async () => {
+    const noUrl = createTransport({ getBaseUrl: () => "", getToken: () => TOKEN, getExpectedCampaignId: () => null, client: "c", fetchImpl });
+    await expect(noUrl.check()).rejects.toMatchObject({ code: "no-url", message: expect.stringMatching(/Enter The Long Rest's address.*click Test connection or Save/) });
+    const noToken = createTransport({ getBaseUrl: () => "https://tlr.example", getToken: () => "", getExpectedCampaignId: () => null, client: "c", fetchImpl });
+    const err = await noToken.check().catch((e) => e);
+    expect(err).toBeInstanceOf(TransportError);
+    expect(err).toMatchObject({ code: "no-token", message: expect.stringMatching(/Paste a VTT connector token.*API access.*click Test connection or Save/) });
+    expect(err.message).not.toMatch(/module settings first/); // the v0.1.0 wording pointed at settings that looked already filled in
+    const noUrlErr = await noUrl.check().catch((e) => e);
+    expect(`${noUrlErr.message}${err.message}`).not.toContain(TOKEN);
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

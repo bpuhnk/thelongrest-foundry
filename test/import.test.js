@@ -113,3 +113,25 @@ describe("import keys and names", () => {
     await expect(connector(fakeWorld(), null).importPackage(pkgFor(S1, 1, "One"))).rejects.toThrow(/campaign/i);
   });
 });
+
+describe("the import report says what the package contained (v0.1.1)", () => {
+  it("an empty package: all counts 0 (so the GM is told why, not '0 created 0 updated')", async () => {
+    const w = fakeWorld();
+    const p = pkgFor(S1, 1, "Empty");
+    const r = await connector(w, CAMPAIGN_A).importPackage({ ...p, npcs: [], encounters: [{ id: "00000000-0000-4000-8000-0000000000e9", name: "Unlinked", monsters: [] }], reveals: [] });
+    expect(r.counts).toEqual({ npcs: 0, encounterActors: 0, basicActors: 0, reveals: 0 });
+    expect(r.created).toBe(0);
+  });
+
+  it("counts NPCs, encounter creatures (incl. typed-in basic actors) and reveals", async () => {
+    const w = fakeWorld();
+    const p = pkgFor(S1, 1, "Full");
+    const r = await connector(w, CAMPAIGN_A).importPackage(p);
+    expect(r.counts.npcs).toBe(p.npcs.length);
+    expect(r.counts.encounterActors).toBe(p.encounters.flatMap((e) => e.monsters).length);
+    expect(r.counts.basicActors).toBe(p.encounters.flatMap((e) => e.monsters).filter((m) => !m.monster).length);
+    expect(r.counts.basicActors).toBeGreaterThan(0); // the fixture has a typed-in combatant
+    expect(r.counts.reveals).toBe(p.reveals.length);
+  });
+});
+

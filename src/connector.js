@@ -238,7 +238,15 @@ export function createConnector({ game, Hooks, Actor, Folder, JournalEntry, tran
     const plan = planFromPackage(pkg, { campaignId: getCampaignId() });
     const idByKey = new Map();
     for (const f of plan.folders) idByKey.set(f.key, await upsertFolder(f, idByKey));
-    const report = { packageVersion: plan.packageVersion, created: 0, updated: 0, misses: {}, errors: [] };
+    // What the package CONTAINED (it's the server's player-visible projection), so the GM can be told
+    // why an import brought nothing, or that some combatants came in as basic actors.
+    const counts = {
+      npcs: plan.actors.filter((a) => a.key.includes(":npc:")).length,
+      encounterActors: plan.actors.filter((a) => a.folderKey.includes(":enc:")).length,
+      basicActors: plan.actors.filter((a) => a.key.includes(":combatant:")).length,
+      reveals: plan.journal.pages.length,
+    };
+    const report = { packageVersion: plan.packageVersion, created: 0, updated: 0, misses: {}, errors: [], counts };
     for (const a of plan.actors) {
       try {
         const folder = idByKey.get(a.folderKey) ?? null;
