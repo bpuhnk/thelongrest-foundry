@@ -12,7 +12,7 @@ import { createRevealPoller, makeAnnouncer } from "./reveals.js";
 import { RollQueue, queueKey } from "./roll-queue.js";
 import { importSession } from "./sessions.js";
 import { createTransport } from "./transport.js";
-import { importButtonProps } from "./ui/import-button.js";
+import { importButtonProps, wireImportButton } from "./ui/import-button.js";
 import { notifyError, notifyImport } from "./ui/notify.js";
 import { makeSettingsApp } from "./ui/settings-app.js";
 
@@ -118,29 +118,24 @@ Hooks.once("ready", () => {
     wasActive = active;
   });
   game.modules.get(MODULE_ID).api = { gate, metrics: () => services.connector.metrics, revealMetrics: () => ({ ...services.poller.metrics }) };
+  // The Actors directory rendered before "ready" (before the connector existed): add the button now.
+  importButton.onReady();
 });
 
-// "Import session prep" in the Actors directory header (GMs only).
-Hooks.on("renderActorDirectory", (_app, html) => {
-  if (!game.user.isGM || !services.connector) return;
-  const root = html instanceof HTMLElement ? html : html?.[0];
-  const actions = root?.querySelector(".header-actions");
-  if (!actions || actions.querySelector("[data-tlr-import]")) return;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.dataset.tlrImport = "";
-  const icon = document.createElement("i");
-  icon.className = "fa-solid fa-campground";
-  const { label, tooltip } = importButtonProps((k) => game.i18n.localize(k));
-  button.append(icon, ` ${label}`);
-  button.dataset.tooltip = tooltip; // Foundry's tooltip convention
-  button.setAttribute("aria-label", tooltip);
-  button.addEventListener("click", async () => {
+// "Import TLR" in the Actors directory header (GMs only, once connected services exist). Wired at load
+// so later renders get it; `importButton.onReady()` below adds it to a directory already rendered
+// before "ready" (the first render always is).
+const importButton = wireImportButton({
+  Hooks,
+  isReadyGM: () => Boolean(game.user?.isGM && services.connector),
+  getDirectoryRoot: () => ui.actors?.element ?? null,
+  doc: document,
+  props: () => importButtonProps((k) => game.i18n.localize(k)),
+  onClick: async () => {
     try {
       notifyImport(await importSession({ transport: services.transport, connector: services.connector }));
     } catch (err) {
       notifyError(err);
     }
-  });
-  actions.append(button);
+  },
 });

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.2
+
+- **The Import TLR button now appears straight after a world launches.** The Actors directory first
+  draws itself before the module has connected, and until now nothing redrew it afterwards, so the
+  button only showed up once something else refreshed the directory. The module now adds it as soon
+  as it's ready (still GM-only, and still only once).
+
 ## 0.1.1
 
 Fixes from the first real install.
