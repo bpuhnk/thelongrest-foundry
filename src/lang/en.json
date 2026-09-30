@@ -23,5 +23,9 @@
   "TLR.Import.BasicActors": "The Long Rest: {count} combatant(s) had no Bestiary entry and came in as basic actors (AC, HP and attacks as text).",
   "TLR.Import.ButtonShort": "Import TLR",
   "TLR.Import.ButtonTooltip": "Import session prep from The Long Rest (the running session)",
-  "TLR.Import.Removed": "The Long Rest: removed {count} NPC(s) that are no longer visible in The Long Rest (and their tokens)."
+  "TLR.Import.Removed": "The Long Rest: removed {count} NPC(s) that are no longer visible in The Long Rest (and their tokens).",
+  "TLR.Import.PickTitle": "Import from The Long Rest",
+  "TLR.Import.PickImport": "Import",
+  "TLR.Import.PickCancel": "Cancel",
+  "TLR.Import.NoSessions": "The Long Rest: no sessions in this campaign yet. Create one in The Long Rest, then import."
 }

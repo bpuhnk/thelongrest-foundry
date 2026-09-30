@@ -4,7 +4,7 @@
  */
 import { MODULE_ID } from "../mapper.js";
 import { disconnect, saveAndConnect } from "../connection.js";
-import { importSession, listSessions } from "../sessions.js";
+import { LAST_IMPORTED, importAndRemember, listSessions, preselectSession } from "../sessions.js";
 import { notifyError, notifyImport } from "./notify.js";
 
 /** @param {{ getServices: () => { transport: any, connector: any, store: any } }} deps */
@@ -57,8 +57,11 @@ export function makeSettingsApp({ getServices }) {
       getServices().onConnectionChanged();
       if (this.status.ok) {
         try {
-          const activeId = transport.verified?.campaign?.activeSession?.id ?? null;
-          this.sessions = (await listSessions(transport)).map((s) => ({ ...s, selected: s.id === activeId }));
+          // Preselect: the running session, else the last one imported in this world.
+          const runningId = transport.verified?.campaign?.activeSession?.id ?? null;
+          const list = await listSessions(transport);
+          const chosen = runningId || store.get(LAST_IMPORTED) ? preselectSession(list, { runningId, lastImportedId: store.get(LAST_IMPORTED) || null }) : null;
+          this.sessions = list.map((s) => ({ ...s, selected: s.id === chosen }));
         } catch {
           this.sessions = null; // the import still works on the running session
         }
@@ -75,10 +78,10 @@ export function makeSettingsApp({ getServices }) {
     }
 
     static async #onImport() {
-      const { transport, connector } = getServices();
+      const { transport, connector, store } = getServices();
       const sessionId = this.element.querySelector("select[name=sessionId]")?.value || null;
       try {
-        notifyImport(await importSession({ transport, connector, sessionId }));
+        notifyImport(await importAndRemember({ transport, connector, store, sessionId }));
       } catch (err) {
         notifyError(err);
       }

@@ -10,9 +10,10 @@ import { versionGate } from "./gate.js";
 import { MODULE_ID } from "./mapper.js";
 import { createRevealPoller, makeAnnouncer } from "./reveals.js";
 import { RollQueue, queueKey } from "./roll-queue.js";
-import { importSession } from "./sessions.js";
+import { runDirectoryImport } from "./sessions.js";
 import { createTransport } from "./transport.js";
 import { importButtonProps, wireImportButton } from "./ui/import-button.js";
+import { pickSessionDialog } from "./ui/session-picker.js";
 import { notifyError, notifyImport } from "./ui/notify.js";
 import { makeSettingsApp } from "./ui/settings-app.js";
 
@@ -39,6 +40,7 @@ Hooks.once("init", () => {
   register("campaignId", { type: String, default: "" }); // the pin, set on the first successful connection
   register("shareNpcHp", { type: Boolean, default: false });
   register("announceReveals", { type: Boolean, default: false });
+  register("lastImportedSessionId", { type: String, default: "" }); // preselects the picker next time
 
   game.settings.registerMenu(MODULE_ID, "connect", {
     name: "TLR.Settings.Menu",
@@ -133,7 +135,15 @@ const importButton = wireImportButton({
   props: () => importButtonProps((k) => game.i18n.localize(k)),
   onClick: async () => {
     try {
-      notifyImport(await importSession({ transport: services.transport, connector: services.connector }));
+      // The running session imports in one click; on a prep day, a picker of recent sessions.
+      const r = await runDirectoryImport({
+        transport: services.transport,
+        connector: services.connector,
+        store,
+        pick: (sessions, preselect) => pickSessionDialog({ sessions, preselect, i18n: game.i18n }),
+      });
+      if (r.outcome === "none") ui.notifications.warn(game.i18n.localize("TLR.Import.NoSessions"));
+      else if (r.outcome === "imported") notifyImport(r.report);
     } catch (err) {
       notifyError(err);
     }

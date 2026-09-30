@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.4
+
+- **Import TLR works on prep days.** With a session running in The Long Rest, **Import TLR** still imports
+  it in one click. With none running, it now asks which session to import, from your recent sessions,
+  instead of stopping with "No session is marked as running". The last session you imported in this world
+  is preselected (else the most recent). If the campaign has no sessions yet, it says so.
+- The Connect window's session list also preselects the running session, else the last one you imported.
+
 ## 0.1.3
 
 - **Re-importing removes NPCs your players can no longer see.** If you set an imported NPC back to
