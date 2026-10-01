@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createConnector } from "../src/connector.js";
-import { makePackage } from "./fixtures/package.js";
+import { makePackage, npcStats, withNpcStats } from "./fixtures/package.js";
 
 const CAMPAIGN_A = "00000000-0000-4000-8000-0000000000ca";
 const CAMPAIGN_B = "00000000-0000-4000-8000-0000000000cb";
@@ -320,5 +320,81 @@ describe("NPC portraits on the actor, its prototype token and placed tokens (v0.
     expect(tok.texture.src).toBe(NEW);
     expect(npc.getFlag("the-long-rest", "portrait")).toBe(NEW);
     expect(r.portraits).toEqual({ actors: 1, tokens: 1 });
+  });
+});
+
+describe("NPC stats, ownership and HP on re-import (v0.1.6)", () => {
+  const npcActor = (w, name) => w.actors.find((a) => a.name === name);
+  const withVisibility = (p, name, visibility) => ({ ...p, npcs: p.npcs.map((n) => (n.name === name ? { ...n, visibility, sheet: undefined } : n)) });
+
+  it("FULL_DETAILS NPCs are LIMITED for players; CARD_ONLY stay GM-only", async () => {
+    const w = fakeWorld();
+    await connector(w, CAMPAIGN_A).importPackage(withNpcStats(pkgFor(S1, 1, "One")), { sessionId: S1 });
+    expect(npcActor(w, "Mira Vell").ownership).toEqual({ default: 1 });
+    expect(npcActor(w, "Trader Wynn").ownership).toEqual({ default: 0 });
+  });
+
+  it("ownership follows a visibility change on re-import, but never overrides the GM's own choice", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    const p = withNpcStats(pkgFor(S1, 1, "One"));
+    await c.importPackage(p, { sessionId: S1 });
+    // Mira goes CARD_ONLY in TLR: back to GM-only.
+    await c.importPackage(withVisibility(p, "Mira Vell", "CARD_ONLY"), { sessionId: S1 });
+    expect(npcActor(w, "Mira Vell").ownership.default).toBe(0);
+    // The GM opens Wynn up to OBSERVER themselves: a re-import (even FULL_DETAILS) leaves it.
+    npcActor(w, "Trader Wynn").ownership.default = 2;
+    await c.importPackage(withVisibility(p, "Trader Wynn", "FULL_DETAILS"), { sessionId: S1 });
+    expect(npcActor(w, "Trader Wynn").ownership.default).toBe(2);
+  });
+
+  it("an actor from before 0.1.6 (no ownership flag, default 0) follows its visibility", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    await c.importPackage(withNpcStats(pkgFor(S1, 1, "One")), { sessionId: S1 });
+    const mira = npcActor(w, "Mira Vell");
+    mira.ownership.default = 0;
+    delete mira.flags["the-long-rest"].ownershipDefault;
+    await c.importPackage(withNpcStats(pkgFor(S1, 1, "One")), { sessionId: S1 });
+    expect(mira.ownership.default).toBe(1);
+  });
+
+  it("re-import keeps a damaged current HP, refreshes max HP and the static stats", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    await c.importPackage(withNpcStats(pkgFor(S1, 1, "One")), { sessionId: S1 });
+    const wynn = npcActor(w, "Trader Wynn");
+    wynn.system.attributes.hp.value = 30; // the GM is tracking damage
+    const changed = npcStats({ ac: { value: 18 }, abilities: { ...npcStats().abilities, str: 18 } });
+    await c.importPackage(withNpcStats(pkgFor(S1, 1, "One"), { "Trader Wynn": changed }), { sessionId: S1 });
+    expect(wynn.system.attributes.hp).toMatchObject({ value: 30, max: 52 });
+    expect(wynn.system.attributes.ac.flat).toBe(18);
+    expect(wynn.system.abilities.str.value).toBe(18);
+    // TLR lowers max HP below the damaged value: clamped.
+    await c.importPackage(withNpcStats(pkgFor(S1, 1, "One"), { "Trader Wynn": npcStats({ hp: { average: 20 } }) }), { sessionId: S1 });
+    expect(wynn.system.attributes.hp).toMatchObject({ value: 20, max: 20 });
+    expect(wynn.flags["the-long-rest"].tlrMaxHp).toBe(20);
+  });
+
+  it("an undamaged NPC follows a raised max; one gaining stats for the first time starts at full", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    await c.importPackage(pkgFor(S1, 1, "One"), { sessionId: S1 }); // v0.1.5-style: no stats yet
+    await c.importPackage(withNpcStats(pkgFor(S1, 1, "One")), { sessionId: S1 });
+    const mira = npcActor(w, "Mira Vell");
+    expect(mira.system.attributes.hp).toMatchObject({ value: 52, max: 52 });
+    await c.importPackage(withNpcStats(pkgFor(S1, 1, "One"), { "Mira Vell": npcStats({ hp: { average: 60 } }) }), { sessionId: S1 });
+    expect(mira.system.attributes.hp).toMatchObject({ value: 60, max: 60 });
+  });
+
+  it("re-importing never duplicates an NPC's items", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    const p = withNpcStats(pkgFor(S1, 1, "One"));
+    await c.importPackage(p, { sessionId: S1 });
+    await c.importPackage(p, { sessionId: S1 });
+    const r = await c.importPackage(p, { sessionId: S1 });
+    expect(npcActor(w, "Trader Wynn").items.map((i) => i.name)).toEqual(["Longsword"]);
+    expect(r.misses).toEqual({});
   });
 });

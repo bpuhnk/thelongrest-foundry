@@ -62,3 +62,31 @@ export function makePackage(reveals = []) {
     reveals,
   };
 }
+
+// The NPC `stats` TLR sends from v0.1.6's app side (Statblock schema, numbers only). Invented values.
+export function npcStats(over = {}) {
+  return {
+    abilities: { str: 16, dex: 12, con: 14, int: 10, wis: 13, cha: 8 },
+    ac: { value: 17 },
+    hp: { average: 52 },
+    speed: { walk: 30 },
+    proficiencyBonus: 3,
+    savingThrows: { str: 6 },
+    skills: { athletics: 6, perception: 7 },
+    senses: { passivePerception: 17 },
+    level: 5,
+    actions: [
+      {
+        name: "Longsword",
+        description: "Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 7 (1d8 + 3) slashing damage.",
+        attack: { kind: "melee", toHit: 6, damage: { formula: "1d8 + 3", type: "slashing" }, reach: 5, range: null },
+      },
+    ],
+    ...over,
+  };
+}
+
+/** makePackage() with `stats` on both NPCs (or the given stats per NPC name). */
+export function withNpcStats(p, byName = {}) {
+  return { ...p, npcs: p.npcs.map((n) => ({ ...n, stats: n.name in byName ? byName[n.name] : npcStats() })) };
+}

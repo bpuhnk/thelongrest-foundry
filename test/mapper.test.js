@@ -1,7 +1,7 @@
 import { describe, expect, it, test } from "vitest";
 
-import { escapeHtml, foundryId, movementSpeeds, parseAttack, planFromPackage, revealPage, senseRanges } from "../src/mapper.js";
-import { IDS, makePackage } from "./fixtures/package.js";
+import { escapeHtml, foundryId, movementSpeeds, parseAttack, planFromPackage, reimportHp, revealPage, senseRanges, structuredAttack } from "../src/mapper.js";
+import { IDS, makePackage, npcStats, withNpcStats } from "./fixtures/package.js";
 
 const CAMPAIGN = "00000000-0000-4000-8000-0000000000ca";
 
@@ -54,10 +54,12 @@ describe("planFromPackage", () => {
     expect(escapeHtml(`"'&<>`)).toBe("&quot;&#39;&amp;&lt;&gt;");
   });
 
-  it("actors are GM-only by default; keys and ids are stable across re-imports", () => {
+  it("actors are GM-only by default (FULL_DETAILS NPCs: players LIMITED); keys and ids are stable across re-imports", () => {
     const a = planFromPackage(makePackage(reveals), { campaignId: CAMPAIGN });
     const b = planFromPackage(makePackage(reveals), { campaignId: CAMPAIGN });
-    expect(a.actors.every((x) => x.data.ownership.default === 0)).toBe(true);
+    const limited = a.actors.filter((x) => x.data.ownership.default === 1).map((x) => x.data.name);
+    expect(limited).toEqual(["Mira Vell"]);
+    expect(a.actors.filter((x) => x.data.name !== "Mira Vell").every((x) => x.data.ownership.default === 0)).toBe(true);
     expect(a.actors.map((x) => x.key)).toEqual(b.actors.map((x) => x.key));
     expect(foundryId("seed")).toBe(foundryId("seed"));
     expect(foundryId("seed")).toMatch(/^[A-Za-z0-9]{16}$/);
@@ -96,4 +98,73 @@ test("a monster is written with dnd5e 6's native movement/senses paths, and veri
   expect(paths).toContain("system.attributes.movement.speeds.walk");
   expect(paths).toContain("system.attributes.senses.ranges.darkvision");
   expect(paths.some((p) => /movement\.walk$|senses\.darkvision$/.test(p))).toBe(false);
+});
+
+describe("NPC stats (v0.1.6)", () => {
+  const plan = (p) => planFromPackage(p, { campaignId: CAMPAIGN });
+  const npcOf = (p, name) => plan(p).actors.find((a) => a.data.name === name);
+
+  it("maps stats onto the npc actor with the monster mapper's pieces, for CARD_ONLY too", () => {
+    const wynn = npcOf(withNpcStats(makePackage()), "Trader Wynn");
+    const sys = wynn.data.system;
+    expect(sys.abilities.str).toEqual({ value: 16, proficient: 1 });
+    expect(sys.abilities.dex).toEqual({ value: 12, proficient: 0 });
+    // Athletics +6 = STR +3 + pb 3 → proficient; Perception +7 = WIS +1 + 2×pb → expertise.
+    expect(sys.skills).toEqual({ ath: { value: 1 }, prc: { value: 2 } });
+    expect(sys.attributes.ac).toEqual({ calc: "flat", flat: 17 });
+    expect(sys.attributes.hp).toMatchObject({ value: 52, max: 52 });
+    expect(sys.attributes.movement.speeds).toEqual({ walk: "30" });
+    expect(wynn.data.flags["the-long-rest"].tlrMaxHp).toBe(52);
+    const sword = wynn.data.items.find((i) => i.name === "Longsword");
+    expect(sword.type).toBe("weapon");
+    expect(sword.system.damage.base).toEqual({ number: 1, denomination: 8, bonus: "3", types: ["slashing"] });
+    const paths = wynn.expect.map(([p]) => p);
+    expect(paths).toEqual(expect.arrayContaining(["system.attributes.hp.max", "system.attributes.ac.flat", "items.length", "items[Longsword].activities.attack.bonus"]));
+  });
+
+  it("stats never add prose: the biography is exactly what visibility allows", () => {
+    const before = plan(makePackage()).actors.filter((a) => a.key.includes(":npc:")).map((a) => a.data.system.details.biography.value);
+    const after = plan(withNpcStats(makePackage())).actors.filter((a) => a.key.includes(":npc:")).map((a) => a.data.system.details.biography.value);
+    expect(after).toEqual(before);
+    expect(after[0]).toBe("<p>Halfling · Commoner 2</p>");
+  });
+
+  it("prefers the structured attack over the rules line", () => {
+    const stats = npcStats({
+      actions: [{ name: "Spear", description: "Melee Weapon Attack: +2 to hit, reach 5 ft., one target. Hit: 3 (1d4 + 1) piercing damage.", attack: { kind: "ranged", toHit: 9, damage: { formula: "2d6 - 1", type: "Piercing" }, reach: null, range: { value: 20, long: 60 } } }],
+    });
+    const spear = npcOf(withNpcStats(makePackage(), { "Trader Wynn": stats }), "Trader Wynn").data.items[0];
+    expect(spear.flags["the-long-rest"].toHit).toBe(9);
+    expect(spear.system.damage.base).toEqual({ number: 2, denomination: 6, bonus: "-1", types: ["piercing"] });
+    expect(spear.system.range).toEqual({ value: 20, long: 60, units: "ft" });
+  });
+
+  it("falls back to the rules line, then to a plain feature, when there's no attack roll", () => {
+    expect(structuredAttack({ kind: "melee", toHit: null })).toBeNull();
+    const stats = npcStats({
+      actions: [
+        { name: "Club", description: "Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 4 (1d4 + 2) bludgeoning damage.", attack: { kind: "melee", toHit: null } },
+        { name: "Touch", description: "Melee Weapon Attack: no attack roll, reach 5 ft., one target.", attack: { kind: "melee", toHit: null, damage: null } },
+      ],
+    });
+    const items = npcOf(withNpcStats(makePackage(), { "Trader Wynn": stats }), "Trader Wynn").data.items;
+    expect(items.map((i) => [i.name, i.type])).toEqual([["Club", "weapon"], ["Touch", "feat"]]);
+    expect(items[0].flags["the-long-rest"].toHit).toBe(4);
+  });
+
+  it("without stats an NPC is exactly as before (v0.1.5)", () => {
+    const wynn = npcOf(makePackage(), "Trader Wynn");
+    expect(wynn.data.system).toEqual({ details: { biography: { value: "<p>Halfling · Commoner 2</p>", public: "<p>Halfling · Commoner 2</p>" } }, attributes: {} });
+    expect(wynn.data.items).toEqual([]);
+    expect(wynn.data.flags["the-long-rest"]).not.toHaveProperty("tlrMaxHp");
+    expect(npcOf(withNpcStats(makePackage(), { "Trader Wynn": null }), "Trader Wynn").data.items).toEqual([]);
+  });
+
+  it("re-import HP: damage is kept (clamped to a lower max); undamaged or first-time follows the new max", () => {
+    expect(reimportHp({ current: 30, foundryMax: 52, lastTlrMax: 52, newMax: 52 })).toEqual({ value: 30, max: 52 });
+    expect(reimportHp({ current: 30, foundryMax: 52, lastTlrMax: 52, newMax: 20 })).toEqual({ value: 20, max: 20 });
+    expect(reimportHp({ current: 30, foundryMax: 52, lastTlrMax: 52, newMax: 60 })).toEqual({ value: 30, max: 60 });
+    expect(reimportHp({ current: 52, foundryMax: 52, lastTlrMax: 52, newMax: 60 })).toEqual({ value: 60, max: 60 });
+    expect(reimportHp({ current: 5, foundryMax: 10, lastTlrMax: undefined, newMax: 52 })).toEqual({ value: 52, max: 52 });
+  });
 });

@@ -170,7 +170,7 @@ function featureItem(entry, section, seed) {
 function attackItem(entry, section, seed, attack) {
   const id = foundryId(`${seed}:${entry.name}:attack`);
   const part = attack.damage
-    ? { number: attack.damage.number, denomination: attack.damage.denomination, bonus: attack.damage.bonus, types: [attack.damage.type] }
+    ? { number: attack.damage.number, denomination: attack.damage.denomination, bonus: attack.damage.bonus, types: attack.damage.type ? [attack.damage.type] : [] }
     : null;
   return {
     name: String(entry.name ?? "Attack").slice(0, 120),
@@ -199,11 +199,32 @@ function attackItem(entry, section, seed, attack) {
   };
 }
 
+/**
+ * The package's structured `attack` (TLR NPC stats, v0.1.6) → the parseAttack shape. null when there's
+ * no attack roll, so the caller falls back to the rules line, then to a plain feature.
+ */
+export function structuredAttack(a) {
+  if (!a || typeof a !== "object" || typeof a.toHit !== "number" || !Number.isFinite(a.toHit)) return null;
+  const dice = /^(\d+)d(\d+)(?:\s*([+-])\s*(\d+))?$/i.exec(String(a.damage?.formula ?? "").trim());
+  const type = typeof a.damage?.type === "string" ? a.damage.type.toLowerCase() : "";
+  const range = a.range && Number.isFinite(Number(a.range.value))
+    ? { value: Number(a.range.value), long: Number.isFinite(Number(a.range.long)) && a.range.long != null ? Number(a.range.long) : null }
+    : null;
+  return {
+    kind: a.kind === "ranged" ? "ranged" : "melee",
+    toHit: a.toHit,
+    damage: dice ? { number: Number(dice[1]), denomination: Number(dice[2]), bonus: dice[3] ? `${dice[3] === "-" ? "-" : ""}${dice[4]}` : "", type } : null,
+    reach: Number.isFinite(Number(a.reach)) && a.reach != null ? Number(a.reach) : null,
+    range,
+  };
+}
+
 function itemsFromStatblock(sb, seed) {
   const items = [];
   for (const section of ["traits", "actions", "bonusActions", "reactions"]) {
     for (const entry of sb[section] ?? []) {
-      const attack = section !== "traits" ? parseAttack(entry.description) : null;
+      // Prefer the structured attack when the package has one; else read the rules line.
+      const attack = section !== "traits" ? structuredAttack(entry.attack) ?? parseAttack(entry.description) : null;
       items.push(attack ? attackItem(entry, section, seed, attack) : featureItem(entry, section, seed));
     }
   }
@@ -222,9 +243,12 @@ function attributionHtml(monster) {
 /**
  * A bestiary monster → an npc Actor. `expect` lists the values that must land (checked after create).
  */
-export function monsterActor({ monster, name, count, encounterName, folderKey, ownership, scope = "" }) {
-  const sb = monster.statblock ?? {};
-  const key = `${scope ? `${scope}:` : ""}monster:${monster.id}`;
+/**
+ * A stat block's mechanics → the dnd5e npc system pieces monsters and NPCs share: abilities (with save
+ * proficiency), skills (proficient vs expertise from the bonus), AC, HP and dnd5e 6 movement/senses.
+ * Passive Perception is derived by dnd5e from WIS + the Perception skill, so it isn't written.
+ */
+export function statSystem(sb) {
   const abilities = Object.fromEntries(
     ABILITIES.map((a) => [a, { value: sb.abilities?.[a] ?? 10, proficient: sb.savingThrows?.[a] != null ? 1 : 0 }]),
   );
@@ -236,10 +260,60 @@ export function monsterActor({ monster, name, count, encounterName, folderKey, o
     const base = mod(sb.abilities?.[SKILL_ABILITY[k]]);
     skills[k] = { value: bonus - base >= 2 * pb ? 2 : 1 };
   }
-  const size = SIZES[String(sb.size ?? "medium").toLowerCase()] ?? "med";
   const speed = sb.speed ?? {};
-  const cr = crNumber(sb.cr ?? monster.cr);
   const senses = sb.senses ?? {};
+  return {
+    abilities,
+    skills,
+    attributes: {
+      ac: { calc: "flat", flat: sb.ac?.value ?? 10 },
+      hp: { value: sb.hp?.average ?? 1, max: sb.hp?.average ?? 1, formula: sb.hp?.formula ?? "" },
+      // dnd5e 6 shapes (read from 6.0.5's MovementField / SensesField): speeds are FORMULA strings
+      // under movement.speeds; senses are nullable integers under senses.ranges (null = none). The
+      // legacy flat keys only work through dnd5e's migration shim, so we don't write them.
+      movement: {
+        speeds: movementSpeeds(speed),
+        hover: Boolean(speed.hover),
+        units: "ft",
+      },
+      senses: {
+        ranges: senseRanges(senses),
+        units: "ft",
+        special: (senses.other ?? []).join(", "),
+      },
+    },
+  };
+}
+
+/** The `expect` entries for the mechanics statSystem wrote (paths shared by monsters and NPCs). */
+function statExpect(data, abilities) {
+  const a = data.system.attributes;
+  return [
+    ["system.abilities.str.value", abilities.str.value],
+    ["system.abilities.dex.value", abilities.dex.value],
+    ["system.attributes.ac.flat", a.ac.flat],
+    ["system.attributes.hp.max", a.hp.max],
+    ["system.attributes.hp.formula", a.hp.formula],
+    ["system.attributes.movement.speeds.walk", a.movement.speeds.walk],
+    ["system.attributes.senses.ranges.darkvision", a.senses.ranges.darkvision],
+  ];
+}
+
+function attackExpect(data) {
+  const firstAttack = data.items.find((i) => i.type === "weapon");
+  if (!firstAttack) return [];
+  return [
+    [`items[${firstAttack.name}].system.damage.base.denomination`, firstAttack.system.damage?.base?.denomination ?? null],
+    [`items[${firstAttack.name}].activities.attack.bonus`, firstAttack.flags[MODULE_ID].toHit.toString()],
+  ];
+}
+
+export function monsterActor({ monster, name, count, encounterName, folderKey, ownership, scope = "" }) {
+  const sb = monster.statblock ?? {};
+  const key = `${scope ? `${scope}:` : ""}monster:${monster.id}`;
+  const { abilities, skills, attributes } = statSystem(sb);
+  const size = SIZES[String(sb.size ?? "medium").toLowerCase()] ?? "med";
+  const cr = crNumber(sb.cr ?? monster.cr);
   const bio =
     `<p>${escapeHtml(`${count}× in “${encounterName}”`)}</p>` +
     (sb.ac?.notes ? `<p>AC: ${escapeHtml(sb.ac.notes)}</p>` : "") +
@@ -253,23 +327,7 @@ export function monsterActor({ monster, name, count, encounterName, folderKey, o
     system: {
       abilities,
       skills,
-      attributes: {
-        ac: { calc: "flat", flat: sb.ac?.value ?? 10 },
-        hp: { value: sb.hp?.average ?? 1, max: sb.hp?.average ?? 1, formula: sb.hp?.formula ?? "" },
-        // dnd5e 6 shapes (read from 6.0.5's MovementField / SensesField): speeds are FORMULA strings
-        // under movement.speeds; senses are nullable integers under senses.ranges (null = none). The
-        // legacy flat keys only work through dnd5e's migration shim, so we don't write them.
-        movement: {
-          speeds: movementSpeeds(speed),
-          hover: Boolean(speed.hover),
-          units: "ft",
-        },
-        senses: {
-          ranges: senseRanges(senses),
-          units: "ft",
-          special: (senses.other ?? []).join(", "),
-        },
-      },
+      attributes,
       details: {
         cr,
         type: creatureType(sb.type),
@@ -292,25 +350,15 @@ export function monsterActor({ monster, name, count, encounterName, folderKey, o
 
   const expect = [
     ["name", data.name],
-    ["system.abilities.str.value", abilities.str.value],
-    ["system.abilities.dex.value", abilities.dex.value],
-    ["system.attributes.ac.flat", data.system.attributes.ac.flat],
-    ["system.attributes.hp.max", data.system.attributes.hp.max],
-    ["system.attributes.hp.formula", data.system.attributes.hp.formula],
-    ["system.attributes.movement.speeds.walk", data.system.attributes.movement.speeds.walk],
-    ["system.attributes.senses.ranges.darkvision", data.system.attributes.senses.ranges.darkvision],
+    ...statExpect(data, abilities),
     ["system.details.cr", cr],
     ["system.details.type.value", data.system.details.type.value],
     ["system.details.alignment", data.system.details.alignment],
     ["system.traits.size", size],
     ["system.traits.languages.custom", data.system.traits.languages.custom],
     ["items.length", data.items.length],
+    ...attackExpect(data),
   ];
-  const firstAttack = data.items.find((i) => i.type === "weapon");
-  if (firstAttack) {
-    expect.push([`items[${firstAttack.name}].system.damage.base.denomination`, firstAttack.system.damage?.base?.denomination ?? null]);
-    expect.push([`items[${firstAttack.name}].activities.attack.bonus`, firstAttack.flags[MODULE_ID].toHit.toString()]);
-  }
   return { key, folderKey, data, expect };
 }
 
@@ -378,21 +426,51 @@ export function npcActor({ npc, folderKey, ownership, scope = "" }) {
   // path the server didn't mean). `portrait` in our flags is what WE last set, so a re-import can tell
   // a changed portrait from art the GM put on the actor or its tokens.
   const img = portraitSrc(npc.avatarUrl);
+  // Mechanics (v0.1.6): TLR sends `stats` for every NPC it packages, CARD_ONLY included. They are
+  // numbers only; the biography above is still the ONLY prose, gated by visibility.
+  const stats = npc.stats && typeof npc.stats === "object" ? npc.stats : null;
+  const st = stats ? statSystem(stats) : null;
+  const own = ownership ?? { default: 0 };
   const data = {
     name: String(npc.name).slice(0, 120),
     type: "npc",
     img,
-    ownership: ownership ?? { default: 0 },
+    ownership: own,
     system: {
+      ...(st ? { abilities: st.abilities, skills: st.skills } : {}),
       details: { biography: { value: bio, public: bio } },
-      attributes: npc.sheet?.armorClass ? { ac: { calc: "flat", flat: npc.sheet.armorClass } } : {},
+      attributes: st ? st.attributes : npc.sheet?.armorClass ? { ac: { calc: "flat", flat: npc.sheet.armorClass } } : {},
     },
     prototypeToken: { name: String(npc.name).slice(0, 120), actorLink: true, disposition: 0, texture: { src: img } },
-    items: [],
-    flags: { [MODULE_ID]: { key, kind: "npc", visibility: npc.visibility, portrait: img } },
+    items: stats ? itemsFromStatblock(stats, key) : [],
+    flags: {
+      [MODULE_ID]: {
+        key, kind: "npc", visibility: npc.visibility, portrait: img,
+        // What WE set, so a re-import can tell its own values from the GM's (ownership, and the max HP
+        // a damaged current HP is measured against).
+        ownershipDefault: own.default ?? 0,
+        ...(st ? { tlrMaxHp: st.attributes.hp.max } : {}),
+      },
+    },
   };
-  return { key, folderKey, data, expect: [["name", data.name], ["system.details.biography.value", bio]] };
+  const expect = [["name", data.name], ["system.details.biography.value", bio]];
+  if (st) expect.push(...statExpect(data, st.abilities), ["items.length", data.items.length], ...attackExpect(data));
+  return { key, folderKey, data, expect };
 }
+
+/**
+ * Re-import HP for an NPC with stats: max HP always follows The Long Rest; current HP is left alone
+ * while the actor is damaged (the GM may be tracking it), clamped to a lowered max. An undamaged actor,
+ * or one whose stats are imported for the first time (no `lastTlrMax`), goes to the new max.
+ */
+export function reimportHp({ current, foundryMax, lastTlrMax, newMax }) {
+  if (lastTlrMax == null || typeof current !== "number" || !Number.isFinite(current)) return { value: newMax, max: newMax };
+  const damaged = current < (typeof foundryMax === "number" ? foundryMax : lastTlrMax);
+  return { value: damaged ? Math.min(current, newMax) : newMax, max: newMax };
+}
+
+/** dnd5e's LIMITED permission: the npc sheet's limited view (portrait + biography, no stats). */
+export const LIMITED = 1;
 
 // ---- the plan -------------------------------------------------------------------------------
 
@@ -416,7 +494,13 @@ export function planFromPackage(pkg, options = {}) {
     { key: `${root}:npcs`, name: "NPCs", type: "Actor", parentKey: root },
   ];
   const actors = [];
-  for (const npc of pkg.npcs ?? []) actors.push(npcActor({ npc, folderKey: `${root}:npcs`, ownership: actorOwnership, scope }));
+  // FULL_DETAILS NPCs: players get LIMITED (they may read the biography TLR already shares with them).
+  // CARD_ONLY stays at actorOwnership (GM-only by default): its stats ride along, but no sheet opens.
+  const fullOwnership = { ...actorOwnership, default: Math.max(actorOwnership.default ?? 0, LIMITED) };
+  for (const npc of pkg.npcs ?? []) {
+    const ownership = npc.visibility === "FULL_DETAILS" ? fullOwnership : actorOwnership;
+    actors.push(npcActor({ npc, folderKey: `${root}:npcs`, ownership, scope }));
+  }
 
   for (const enc of pkg.encounters ?? []) {
     const fk = `${root}:enc:${enc.id}`;

@@ -4,7 +4,7 @@
  * every request goes through the injected `transport` (transport.js holds the token and enforces the
  * campaign pin + scope). Counters land on `connector.metrics` for the status panel and tests.
  */
-import { MODULE_ID, planFromPackage } from "./mapper.js";
+import { MODULE_ID, planFromPackage, reimportHp } from "./mapper.js";
 import { versionGate } from "./gate.js";
 import { combatPayload, effectsPayload, hpPayload, initiativePayload, Pusher, rollsFromMessage } from "./push.js";
 
@@ -306,8 +306,24 @@ export function createConnector({ game, Hooks, Actor, Folder, JournalEntry, tran
         let actor = game.actors.find((x) => x.getFlag(MODULE_ID, "key") === a.key);
         const { items, ownership, ...rest } = a.data;
         if (actor) {
-          const update = { ...rest, folder };
-          const portrait = rest.flags?.[MODULE_ID]?.portrait; // NPCs only
+          const ourFlags = { ...(rest.flags?.[MODULE_ID] ?? {}) };
+          const update = { ...rest, folder, flags: { ...rest.flags, [MODULE_ID]: ourFlags } };
+          const portrait = ourFlags.portrait; // NPCs only
+          if (ourFlags.kind === "npc") {
+            // Read BEFORE the update: Foundry changes the document (and cleans the data we pass) in place.
+            // Ownership follows the NPC's visibility only while it's still what WE set (pre-0.1.6 actors
+            // were always created at the default 0); a GM's own choice is left alone.
+            const ourLast = actor.getFlag(MODULE_ID, "ownershipDefault") ?? 0;
+            if ((actor.ownership?.default ?? 0) === ourLast) update.ownership = { default: ownership.default ?? 0 };
+            else ourFlags.ownershipDefault = ourLast;
+            // Max HP always follows TLR; a damaged current HP is the GM's, so it's kept (clamped).
+            if (ourFlags.tlrMaxHp !== undefined) {
+              const hp = actor.system?.attributes?.hp ?? {};
+              const next = reimportHp({ current: hp.value, foundryMax: hp.max, lastTlrMax: actor.getFlag(MODULE_ID, "tlrMaxHp"), newMax: ourFlags.tlrMaxHp });
+              const attrs = update.system?.attributes ?? {};
+              update.system = { ...update.system, attributes: { ...attrs, hp: { ...attrs.hp, ...next } } };
+            }
+          }
           // What we set LAST time (pre-0.1.5 actors have no flag, but their img was always ours). Read
           // before the update: Foundry changes the document (and cleans the data we pass) in place.
           const previous = portrait === undefined ? undefined : actor.getFlag(MODULE_ID, "portrait") ?? actor.img;

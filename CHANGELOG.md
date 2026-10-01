@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.1.6
+
+- **NPCs come with their stats.** The Long Rest now sends an NPC's mechanics with every NPC it puts in
+  a session's package, *Card only* included (requires The Long Rest's matching update). An imported NPC
+  gets its ability scores and saving-throw proficiencies, skills, AC, hit points, speed, and its attacks
+  as weapon items you can roll, the same way bestiary monsters are imported.
+  - Only numbers come across. The biography is unchanged: what players can read still follows the
+    NPC's visibility in The Long Rest.
+- **Players can open Full-details NPCs.** A *Full details* NPC is imported with players at Limited
+  permission, so they can open its portrait and biography (dnd5e's limited sheet shows no stats). *Card
+  only* NPCs stay GM-only.
+  - On re-import, the permission follows a visibility change, unless you set the permission yourself:
+    then it's left alone.
+- **Re-import keeps the damage you're tracking.** Max HP and the other stats refresh from The Long Rest
+  on every import. A damaged NPC keeps its current HP (lowered to the new maximum if The Long Rest's
+  went down); an undamaged one follows the new maximum.
+
 ## 0.1.5
 
 - **NPC tokens show the NPC's portrait.** An imported NPC's prototype token now uses its portrait from
