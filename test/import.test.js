@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createConnector } from "../src/connector.js";
-import { makePackage, npcStats, withNpcStats } from "./fixtures/package.js";
+import { blockStats, makePackage, npcStats, withNpcStats } from "./fixtures/package.js";
 
 const CAMPAIGN_A = "00000000-0000-4000-8000-0000000000ca";
 const CAMPAIGN_B = "00000000-0000-4000-8000-0000000000cb";
@@ -395,6 +395,34 @@ describe("NPC stats, ownership and HP on re-import (v0.1.6)", () => {
     await c.importPackage(p, { sessionId: S1 });
     const r = await c.importPackage(p, { sessionId: S1 });
     expect(npcActor(w, "Trader Wynn").items.map((i) => i.name)).toEqual(["Longsword"]);
+    expect(r.misses).toEqual({});
+  });
+
+  // v0.1.7: an NPC with its own stat block (TLR's builder).
+  it("keeps legendary actions/resistance the GM has spent (clamped to a lowered max); refreshes everything else", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    const pkg = (stats) => withNpcStats(pkgFor(S1, 1, "One"), { "Trader Wynn": stats });
+    await c.importPackage(pkg(blockStats()), { sessionId: S1 });
+    const wynn = npcActor(w, "Trader Wynn");
+    expect(wynn.system.resources.legact).toEqual({ value: 3, max: 3 });
+    wynn.system.resources.legact.value = 2; // spent in play
+    wynn.system.resources.legres.value = 2;
+    await c.importPackage(pkg(blockStats({ cr: "15" })), { sessionId: S1 });
+    expect(wynn.system.resources.legact).toEqual({ value: 2, max: 3 });
+    expect(wynn.system.resources.legres).toEqual({ value: 2, max: 3 });
+    expect(wynn.system.details.cr).toBe(15);
+    await c.importPackage(pkg(blockStats({ legendaryActions: { count: 1, entries: [{ name: "Tail Attack", description: "x" }] } })), { sessionId: S1 });
+    expect(wynn.system.resources.legact).toEqual({ value: 1, max: 1 });
+  });
+
+  it("never duplicates the block's items", async () => {
+    const w = fakeWorld();
+    const c = connector(w, CAMPAIGN_A);
+    const p = withNpcStats(pkgFor(S1, 1, "One"), { "Trader Wynn": blockStats() });
+    await c.importPackage(p, { sessionId: S1 });
+    const r = await c.importPackage(p, { sessionId: S1 });
+    expect(npcActor(w, "Trader Wynn").items.map((i) => i.name).sort()).toEqual(["Bite", "Grasping Tide", "Legendary Resistance (3/Day)", "Tail Attack"]);
     expect(r.misses).toEqual({});
   });
 });

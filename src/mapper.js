@@ -150,7 +150,7 @@ export function foundryId(seed) {
 
 // ---- items ----------------------------------------------------------------------------------
 
-const ACTIVATION = { actions: "action", bonusActions: "bonus", reactions: "reaction", legendary: "legendary" };
+const ACTIVATION = { actions: "action", bonusActions: "bonus", reactions: "reaction", legendary: "legendary", lair: "lair", mythic: "mythic" };
 
 function featureItem(entry, section, seed) {
   return {
@@ -229,8 +229,58 @@ function itemsFromStatblock(sb, seed) {
     }
   }
   for (const entry of sb.legendaryActions?.entries ?? []) items.push(featureItem(entry, "legendary", seed));
+  // v0.1.7: the rest of a full stat block (an NPC's own block from TLR's builder, or a monster's).
+  for (const entry of sb.lairActions ?? []) items.push(featureItem(entry, "lair", seed));
+  for (const entry of sb.mythicActions ?? []) items.push(featureItem(entry, "mythic", seed));
+  for (const entry of sb.regionalEffects ?? []) items.push(featureItem(entry, "regional", seed));
   for (const entry of sb.spellcasting ?? []) items.push(featureItem(entry, "traits", seed));
   return items;
+}
+
+/**
+ * dnd5e's legendary/lair resources from a stat block: legendary actions per round (`legact`), legendary
+ * resistance uses from a "Legendary Resistance (N/Day)" trait (`legres`), and a lair (initiative 20).
+ * Empty when the block has none of them.
+ */
+export function resourcesFromStatblock(sb) {
+  const out = {};
+  const count = Number(sb.legendaryActions?.count);
+  if (Number.isInteger(count) && count > 0) out.legact = { value: count, max: count };
+  for (const t of sb.traits ?? []) {
+    const m = /legendary resistance\s*\((\d+)\s*\/\s*day/i.exec(String(t?.name ?? ""));
+    if (m) out.legres = { value: Number(m[1]), max: Number(m[1]) };
+  }
+  if ((sb.lairActions ?? []).length) out.lair = { value: true, initiative: 20 };
+  return out;
+}
+
+/** dnd5e npc details + traits from a stat block (CR, type, alignment, size, languages, resistances). */
+function detailsAndTraits(sb, fallbackCr) {
+  return {
+    details: { cr: crNumber(sb.cr ?? fallbackCr), type: creatureType(sb.type), alignment: String(sb.alignment ?? "") },
+    traits: {
+      size: SIZES[String(sb.size ?? "medium").toLowerCase()] ?? "med",
+      languages: { value: [], custom: (sb.languages ?? []).join("; ") },
+      di: { value: [], custom: (sb.damageImmunities ?? []).join("; ") },
+      dr: { value: [], custom: (sb.damageResistances ?? []).join("; ") },
+      dv: { value: [], custom: (sb.damageVulnerabilities ?? []).join("; ") },
+      ci: { value: [], custom: (sb.conditionImmunities ?? []).join("; ") },
+    },
+  };
+}
+
+/** The CC-BY lines TLR sends with an NPC's own stat block (`stats.attribution`), as biography HTML. */
+function statsAttributionHtml(lines) {
+  if (!Array.isArray(lines) || !lines.length) return "";
+  return (
+    "<hr>" +
+    lines
+      .map((l) => {
+        const head = [l?.license, Array.isArray(l?.monsters) && l.monsters.length ? `from ${l.monsters.join(", ")}` : ""].filter(Boolean).join(", ");
+        return `<p><em>${escapeHtml(head)}${l?.modified ? " (modified)" : ""}</em></p>` + (l?.attribution ? `<p>${escapeHtml(l.attribution)}</p>` : "");
+      })
+      .join("")
+  );
 }
 
 // ---- actors ---------------------------------------------------------------------------------
@@ -312,8 +362,10 @@ export function monsterActor({ monster, name, count, encounterName, folderKey, o
   const sb = monster.statblock ?? {};
   const key = `${scope ? `${scope}:` : ""}monster:${monster.id}`;
   const { abilities, skills, attributes } = statSystem(sb);
-  const size = SIZES[String(sb.size ?? "medium").toLowerCase()] ?? "med";
-  const cr = crNumber(sb.cr ?? monster.cr);
+  const { details, traits } = detailsAndTraits(sb, monster.cr);
+  const size = traits.size;
+  const cr = details.cr;
+  const resources = resourcesFromStatblock(sb);
   const bio =
     `<p>${escapeHtml(`${count}× in “${encounterName}”`)}</p>` +
     (sb.ac?.notes ? `<p>AC: ${escapeHtml(sb.ac.notes)}</p>` : "") +
@@ -328,20 +380,9 @@ export function monsterActor({ monster, name, count, encounterName, folderKey, o
       abilities,
       skills,
       attributes,
-      details: {
-        cr,
-        type: creatureType(sb.type),
-        alignment: String(sb.alignment ?? ""),
-        biography: { value: bio, public: "" },
-      },
-      traits: {
-        size,
-        languages: { value: [], custom: (sb.languages ?? []).join("; ") },
-        di: { value: [], custom: (sb.damageImmunities ?? []).join("; ") },
-        dr: { value: [], custom: (sb.damageResistances ?? []).join("; ") },
-        dv: { value: [], custom: (sb.damageVulnerabilities ?? []).join("; ") },
-        ci: { value: [], custom: (sb.conditionImmunities ?? []).join("; ") },
-      },
+      details: { ...details, biography: { value: bio, public: "" } },
+      traits,
+      ...(Object.keys(resources).length ? { resources } : {}),
     },
     prototypeToken: { name: String(name).slice(0, 120), actorLink: false, disposition: -1 },
     items: itemsFromStatblock(sb, key),
@@ -358,8 +399,17 @@ export function monsterActor({ monster, name, count, encounterName, folderKey, o
     ["system.traits.languages.custom", data.system.traits.languages.custom],
     ["items.length", data.items.length],
     ...attackExpect(data),
+    ...resourceExpect(resources),
   ];
   return { key, folderKey, data, expect };
+}
+
+function resourceExpect(resources) {
+  const out = [];
+  if (resources.legact) out.push(["system.resources.legact.max", resources.legact.max]);
+  if (resources.legres) out.push(["system.resources.legres.max", resources.legres.max]);
+  if (resources.lair) out.push(["system.resources.lair.value", true]);
+  return out;
 }
 
 /** A typed-in combatant with no bestiary entry → a bare npc Actor (AC, HP, attacks as text). */
@@ -430,6 +480,13 @@ export function npcActor({ npc, folderKey, ownership, scope = "" }) {
   // numbers only; the biography above is still the ONLY prose, gated by visibility.
   const stats = npc.stats && typeof npc.stats === "object" ? npc.stats : null;
   const st = stats ? statSystem(stats) : null;
+  // v0.1.7: an NPC with its OWN stat block (TLR's builder) also brings CR/type/size/languages/
+  // resistances and legendary/lair resources; a sheet-built `stats` has none of those, so nothing is
+  // written for them (a GM's own CR or size survives). Its parts' CC-BY attribution joins the biography.
+  const fromBlock = Boolean(stats && (stats.cr != null || stats.type || stats.size || stats.legendaryActions || stats.lairActions || stats.languages));
+  const dt = fromBlock ? detailsAndTraits(stats, null) : null;
+  const resources = stats ? resourcesFromStatblock(stats) : {};
+  bio += statsAttributionHtml(stats?.attribution);
   const own = ownership ?? { default: 0 };
   const data = {
     name: String(npc.name).slice(0, 120),
@@ -438,7 +495,9 @@ export function npcActor({ npc, folderKey, ownership, scope = "" }) {
     ownership: own,
     system: {
       ...(st ? { abilities: st.abilities, skills: st.skills } : {}),
-      details: { biography: { value: bio, public: bio } },
+      details: { ...(dt ? { cr: dt.details.cr, type: dt.details.type, alignment: dt.details.alignment } : {}), biography: { value: bio, public: bio } },
+      ...(dt ? { traits: dt.traits } : {}),
+      ...(Object.keys(resources).length ? { resources } : {}),
       attributes: st ? st.attributes : npc.sheet?.armorClass ? { ac: { calc: "flat", flat: npc.sheet.armorClass } } : {},
     },
     prototypeToken: { name: String(npc.name).slice(0, 120), actorLink: true, disposition: 0, texture: { src: img } },
@@ -454,7 +513,8 @@ export function npcActor({ npc, folderKey, ownership, scope = "" }) {
     },
   };
   const expect = [["name", data.name], ["system.details.biography.value", bio]];
-  if (st) expect.push(...statExpect(data, st.abilities), ["items.length", data.items.length], ...attackExpect(data));
+  if (st) expect.push(...statExpect(data, st.abilities), ["items.length", data.items.length], ...attackExpect(data), ...resourceExpect(resources));
+  if (dt) expect.push(["system.details.cr", dt.details.cr], ["system.traits.languages.custom", dt.traits.languages.custom]);
   return { key, folderKey, data, expect };
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, test } from "vitest";
 
-import { escapeHtml, foundryId, movementSpeeds, parseAttack, planFromPackage, reimportHp, revealPage, senseRanges, structuredAttack } from "../src/mapper.js";
-import { IDS, makePackage, npcStats, withNpcStats } from "./fixtures/package.js";
+import { escapeHtml, foundryId, movementSpeeds, parseAttack, planFromPackage, reimportHp, resourcesFromStatblock, revealPage, senseRanges, structuredAttack } from "../src/mapper.js";
+import { blockStats, IDS, makePackage, npcStats, withNpcStats } from "./fixtures/package.js";
 
 const CAMPAIGN = "00000000-0000-4000-8000-0000000000ca";
 
@@ -168,3 +168,57 @@ describe("NPC stats (v0.1.6)", () => {
     expect(reimportHp({ current: 5, foundryMax: 10, lastTlrMax: undefined, newMax: 52 })).toEqual({ value: 52, max: 52 });
   });
 });
+
+describe("an NPC with its own stat block (v0.1.7)", () => {
+  const plan = (p) => planFromPackage(p, { campaignId: CAMPAIGN });
+  const npcOf = (p, name) => plan(p).actors.find((a) => a.data.name === name);
+  const bbg = () => npcOf(withNpcStats(makePackage(), { "Trader Wynn": blockStats() }), "Trader Wynn");
+
+  it("brings CR, type, size, languages, resistances and the legendary/lair resources (CARD_ONLY too)", () => {
+    const { system } = bbg().data;
+    expect(system.details).toMatchObject({ cr: 14, type: { value: "dragon" }, alignment: "chaotic evil" });
+    expect(system.traits).toMatchObject({ size: "huge", languages: { custom: "Common; Draconic" }, di: { custom: "acid" } });
+    expect(system.resources).toEqual({ legact: { value: 3, max: 3 }, legres: { value: 3, max: 3 }, lair: { value: true, initiative: 20 } });
+    expect(system.attributes.hp).toMatchObject({ value: 195, max: 195, formula: "17d12 + 85" });
+  });
+
+  it("legendary and lair actions become items with dnd5e's activation types; a bite is a weapon", () => {
+    const items = bbg().data.items;
+    const by = (n) => items.find((i) => i.name === n);
+    expect(by("Tail Attack").system.activation).toEqual({ type: "legendary", value: 1 });
+    expect(by("Grasping Tide").system.activation).toEqual({ type: "lair", value: 1 });
+    expect(by("Bite").type).toBe("weapon");
+    expect(by("Legendary Resistance (3/Day)").type).toBe("feat");
+  });
+
+  it("the CC-BY attribution joins the biography, escaped, marked as modified", () => {
+    const bio = bbg().data.system.details.biography.value;
+    expect(bio).toContain("CC-BY-4.0 (SRD 5.1), from Adult Black Dragon (modified)");
+    expect(bio).toContain("Stand-in SRD attribution &lt;b&gt;text&lt;/b&gt;");
+    expect(bio).not.toContain("<b>");
+    // Every part of the line is TLR text: a monster name is escaped too.
+    const hostile = blockStats({ attribution: [{ license: "CC-BY-4.0", attribution: null, monsters: ["<img src=x onerror=alert(1)>"], modified: false }] });
+    const bio2 = npcOf(withNpcStats(makePackage(), { "Trader Wynn": hostile }), "Trader Wynn").data.system.details.biography.value;
+    expect(bio2).not.toContain("<img");
+    expect(bio2).toContain("&lt;img");
+  });
+
+  it("verifies the resources and CR after create", () => {
+    const paths = bbg().expect.map(([p]) => p);
+    expect(paths).toEqual(expect.arrayContaining(["system.resources.legact.max", "system.resources.legres.max", "system.resources.lair.value", "system.details.cr"]));
+  });
+
+  it("a sheet-built `stats` writes no CR, size, traits or resources (a GM's own survive)", () => {
+    const { system } = npcOf(withNpcStats(makePackage()), "Trader Wynn").data;
+    expect(system.traits).toBeUndefined();
+    expect(system.resources).toBeUndefined();
+    expect(system.details).not.toHaveProperty("cr");
+  });
+
+  it("a monster's lair actions now import too, with the lair resource", () => {
+    expect(resourcesFromStatblock({ lairActions: [{ name: "x", description: "y" }] })).toEqual({ lair: { value: true, initiative: 20 } });
+    expect(resourcesFromStatblock({ legendaryActions: { entries: [] } })).toEqual({});
+    expect(resourcesFromStatblock({ traits: [{ name: "Legendary Resistance (2/day)" }] })).toEqual({ legres: { value: 2, max: 2 } });
+  });
+});
+

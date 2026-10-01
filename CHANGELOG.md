@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.1.7
+
+- **NPCs with their own stat block.** In The Long Rest a DM can now give an NPC a stat block built from
+  the Bestiary, a whole monster or parts of several (requires The Long Rest's matching update). Import
+  TLR then uses that stat block instead of the character sheet's numbers:
+  - challenge rating, creature type, alignment, size, languages, damage and condition immunities;
+  - traits, actions, bonus actions, reactions, legendary, lair and mythic actions and regional effects as
+    items, with dnd5e's activation types (legendary, lair, mythic);
+  - legendary actions per round, legendary resistance (from a "Legendary Resistance (N/Day)" trait) and
+    the lair (initiative 20) as dnd5e resources.
+  - The rules text comes across for *Card only* NPCs too, like any monster's. The DM's private notes in
+    it are removed by The Long Rest before it's sent.
+- **Attribution.** When parts were copied from the SRD, the NPC's biography carries the licence and
+  attribution, noting when the DM changed the material (the CC-BY licence requires it).
+- **Bestiary monsters with lair actions** now import their lair actions and the lair resource too.
+- **Re-import keeps spent legendary actions and resistances,** as it keeps damage: the maximum refreshes,
+  the count you've spent stays (lowered to a new, smaller maximum).
+
 ## 0.1.6
 
 - **NPCs come with their stats.** The Long Rest now sends an NPC's mechanics with every NPC it puts in

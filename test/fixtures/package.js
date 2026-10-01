@@ -90,3 +90,23 @@ export function npcStats(over = {}) {
 export function withNpcStats(p, byName = {}) {
   return { ...p, npcs: p.npcs.map((n) => ({ ...n, stats: n.name in byName ? byName[n.name] : npcStats() })) };
 }
+
+// An NPC with its OWN stat block (TLR's builder, v0.1.7): the full Statblock, rules text included,
+// plus the CC-BY attribution of its copied parts. Invented values; the attribution text is a stand-in.
+export function blockStats(over = {}) {
+  return {
+    size: "Huge", type: "dragon", alignment: "chaotic evil", cr: "14",
+    abilities: { str: 23, dex: 14, con: 21, int: 14, wis: 13, cha: 17 },
+    ac: { value: 19, notes: "natural armor" }, hp: { average: 195, formula: "17d12 + 85" },
+    speed: { walk: 40, fly: 80, swim: 40 }, proficiencyBonus: 5,
+    savingThrows: { dex: 7 }, skills: { stealth: 7 }, senses: { darkvision: 120, passivePerception: 21 },
+    languages: ["Common", "Draconic"], damageImmunities: ["acid"],
+    traits: [{ name: "Legendary Resistance (3/Day)", description: "If it fails a saving throw, it can choose to succeed instead." }],
+    actions: [{ name: "Bite", description: "Melee Weapon Attack: +11 to hit, reach 10 ft., one target. Hit: 17 (2d10 + 6) piercing damage." }],
+    legendaryActions: { count: 3, description: "It can take 3 legendary actions.", entries: [{ name: "Tail Attack", description: "It makes a tail attack." }] },
+    lairActions: [{ name: "Grasping Tide", description: "A grasping tide rises." }],
+    level: 5,
+    attribution: [{ license: "CC-BY-4.0 (SRD 5.1)", attribution: "Stand-in SRD attribution <b>text</b>", monsters: ["Adult Black Dragon"], modified: true }],
+    ...over,
+  };
+}

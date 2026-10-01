@@ -1,6 +1,6 @@
 {
   "name": "thelongrest-foundry",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "description": "The Long Rest companion module for Foundry VTT (dnd5e).",
   "license": "MIT",

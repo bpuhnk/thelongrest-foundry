@@ -5,6 +5,16 @@
  * campaign pin + scope). Counters land on `connector.metrics` for the status panel and tests.
  */
 import { MODULE_ID, planFromPackage, reimportHp } from "./mapper.js";
+
+/** Re-import: a legendary-action / legendary-resistance count the GM has spent is kept (clamped to the new max). */
+export function keepSpentResources(update, actor) {
+  const next = update.system?.resources;
+  if (!next) return;
+  for (const k of ["legact", "legres"]) {
+    const cur = actor.system?.resources?.[k]?.value;
+    if (next[k] && typeof cur === "number" && Number.isFinite(cur)) next[k] = { ...next[k], value: Math.min(cur, next[k].max) };
+  }
+}
 import { versionGate } from "./gate.js";
 import { combatPayload, effectsPayload, hpPayload, initiativePayload, Pusher, rollsFromMessage } from "./push.js";
 
@@ -324,6 +334,9 @@ export function createConnector({ game, Hooks, Actor, Folder, JournalEntry, tran
               update.system = { ...update.system, attributes: { ...attrs, hp: { ...attrs.hp, ...next } } };
             }
           }
+          // Legendary actions / resistance spent in play are the GM's (like damage): a re-import refreshes
+          // the max but keeps a spent count, clamped. Read BEFORE the update (Foundry mutates in place).
+          keepSpentResources(update, actor);
           // What we set LAST time (pre-0.1.5 actors have no flag, but their img was always ours). Read
           // before the update: Foundry changes the document (and cleans the data we pass) in place.
           const previous = portrait === undefined ? undefined : actor.getFlag(MODULE_ID, "portrait") ?? actor.img;
